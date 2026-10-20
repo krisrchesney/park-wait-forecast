@@ -1,6 +1,6 @@
 name: collect
 
-# Manual by default so a fresh clone does not burn Actions minutes by accident.
+# Runs on a schedule and can also be started by hand from the Actions tab.
 #
 # Why one long job instead of a cron every few minutes: a scheduled job per snapshot would push a data
 # commit every time (about 100 a day) and bloat the repository. This job polls inside ONE process
@@ -10,8 +10,8 @@ name: collect
 # repository activity. Public repositories run Actions free.
 on:
   workflow_dispatch:
-  # schedule:
-  #   - cron: "7 */6 * * *"
+  schedule:
+    - cron: "7 */6 * * *"
 
 permissions:
   contents: write
