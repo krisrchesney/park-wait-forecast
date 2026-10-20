@@ -1,0 +1,85 @@
+project: park-wait-forecast
+lake:
+  root: data/raw
+queue_times:
+  snapshot_minutes: 10
+  request_interval_seconds: 1.0
+  parks:
+  - id: 6
+    name: Magic Kingdom
+    timezone: America/New_York
+  - id: 5
+    name: Epcot
+    timezone: America/New_York
+  - id: 7
+    name: Hollywood Studios
+    timezone: America/New_York
+  - id: 8
+    name: Animal Kingdom
+    timezone: America/New_York
+  - id: 65
+    name: Universal Studios Orlando
+    timezone: America/New_York
+  - id: 64
+    name: Islands of Adventure
+    timezone: America/New_York
+data:
+  db_path: data/warehouse.duckdb
+  table: training_data
+  source: queue_times
+  builder: parkwaits.features:build_training_table
+  timestamp_col: event_ts
+  horizon_minutes: 60
+  wait_threshold_min: 45
+  min_rows: 2000
+  min_positives: 50
+model:
+  description: 'Forecasts whether an open ride''s posted wait will be at least 45 minutes one hour from now, from
+    its recent waits, park-wide conditions and the park''s local clock. Intended use: trip-planning hints, not guarantees.'
+  label_definition: 1 if the ride is still open 60 minutes later and its posted wait is >= 45 minutes, else 0. Rows
+    whose ride is closed or unobserved at the target time are excluded.
+  limitations:
+  - 'History only exists from the first collection run: seasonality (holidays, school terms, summer) is not learned
+    until months of data exist.'
+  - 'Conditional on the ride staying open: closures, which also change real waits, are excluded from the label.'
+  - Posted waits are estimates published by the parks, not measured waits.
+  - Collection gaps (scheduled CI runs can be late or skipped) drop rows rather than being imputed.
+  - The 60 minute label horizon overlaps the start of the test period by one hour, a negligible leak at weeks of
+    data.
+  - 'Compared against a naive ''wait stays the same'' forecast, which is strong at short horizons: the build prints
+    that baseline.'
+  target: label
+  features:
+  - wait_now
+  - wait_lag_30
+  - wait_lag_60
+  - wait_change_30
+  - wait_max_3h
+  - wait_mean_3h
+  - minutes_since_open
+  - staleness_min
+  - park_mean_wait
+  - park_open_frac
+  - park_n_open
+  - ride_hist_mean_same_hour
+  - ride_hist_mean_day
+  - local_minutes
+  - local_dow
+  - is_weekend
+  candidates:
+  - logistic_baseline
+  - hist_gbm
+  - lightgbm
+  selection_metric: avg_precision
+  min_auc_improvement: 0.005
+  test_fraction: 0.2
+  random_state: 42
+  registry_dir: models
+mlflow:
+  tracking_uri: sqlite:///mlflow.db
+  experiment: park-wait-forecast
+drift:
+  bins: 10
+  psi_warn: 0.1
+  psi_alert: 0.25
+  auc_drop_alert: 0.05
