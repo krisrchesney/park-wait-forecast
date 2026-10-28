@@ -239,9 +239,7 @@ def train(cfg: dict[str, Any]) -> dict[str, Any]:
                 train_df,
                 features,
                 target,
-                build_candidates(
-                    model_cfg["random_state"], model_cfg.get("candidates"), model_cfg.get("calibration")
-                ),
+                build_candidates(model_cfg["random_state"], model_cfg.get("candidates")),
                 metric,
                 int(model_cfg.get("selection_folds", 4)),
             )
