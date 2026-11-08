@@ -4,7 +4,7 @@ Forecasts, for an open theme-park ride, whether its posted wait will be **at lea
 
 Wait-time data is powered by [Queue-Times.com](https://queue-times.com). If you publish a page, app or write-up that shows this data, keep the attribution "Powered by Queue-Times.com" visible with a link.
 
-> Status: pipeline and tests are complete and collection is running on a schedule (started Nov 7, 2026). **No model results are published yet**: the source only provides current values, so history builds up one snapshot at a time, and numbers will be added to Results once there is enough of it. None are claimed before then.
+> Status: pipeline and tests are complete and collection runs on a schedule (history from Oct 20, 2026). **First real results are in the Results section** (model v20261108T164742Z, trained Nov 8, 2026).
 
 ## Why this project
 
@@ -66,7 +66,22 @@ Parks are listed in `config/config.yaml` with their timezones (checked against t
 
 ## Results
 
-_Not yet generated; waiting on history._ Planned once there is enough: positive rate, the persistence baseline AUC printed by `build`, ROC AUC / average precision / ECE for the baseline and champion, the SHAP chart from `reports/`, and the Evidently drift report.
+One recorded run on Nov 8, 2026: model **v20261108T164742Z** (LightGBM champion), built from 453,112 snapshots (Oct 20 to Nov 8, 2026) into 186,469 training rows. Positive rate (wait of 45+ minutes in an hour, ride still open) is 9.5%. The test window is the newest 20% of rows, Nov 4 15:10 to Nov 8 11:30 UTC.
+
+| Model | ROC AUC | Avg precision | Brier | ECE |
+|---|---|---|---|---|
+| Persistence ("same as now") | 0.947 | not printed | not computed | not computed |
+| Logistic baseline | 0.962 | 0.789 | 0.0436 | 0.0086 |
+| HistGradientBoosting | 0.968 | 0.813 | 0.0407 | 0.0072 |
+| **LightGBM (champion)** | **0.969** | **0.820** | **0.0399** | **0.0067** |
+
+**Does it beat "same as now"? Yes on AUC, narrowly: 0.969 against 0.947.** Most of the signal is the current wait; a plain logistic model already reaches 0.962, so the gradient-boosted gain over it is small. The champion was chosen on average precision over four rolling folds (0.819 vs 0.765 for logistic).
+
+Top SHAP features: ride's mean wait that day, current wait, share of the park's rides open, local time of day, ride's mean wait at the same hour (`reports/shap_importance.png`).
+
+Drift: the report says "alert", but it compares training data with only 1,000 rows after the cutoff and has no live AUC yet, so it says nothing useful about drift. It also flags calendar features (weekday, weekend) that differ between short windows by construction. Treat it as not yet meaningful.
+
+Disclosure: the champion was selected on rolling folds drawn from this same 19-day history, and the test window is part of it. Data collected after Nov 8, 2026 is untouched evidence. Only about 2.5 weeks have been seen, with no holidays or school-term effects.
 
 ## Limitations
 

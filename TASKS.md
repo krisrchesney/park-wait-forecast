@@ -16,7 +16,7 @@ Template:
 ## Ready
 
 ### T-1: First real results (after Nov 3)
-Status: Ready
+Status: Review (ticket/T-1-first-results)
 Owns: README Results; nothing else
 Blocked by: none
 Why: About two weeks of data will exist; report build/train/drift/explain honestly against the persistence baseline.
