@@ -25,7 +25,7 @@ Done when:
 - [ ] States plainly whether the model beats 'same as now' persistence
 
 ### T-2: Parks page in the house style
-Status: Ready
+Status: Review (ticket/T-2-parks-page)
 Owns: scripts/build_site.py (new); scripts/site_charts.py (copied); .github/workflows/pages.yml (new)
 Blocked by: none
 Why: Same layout as the sister projects: what it does and how to use it, charts with computed headlines, then data, with the Queue-Times attribution.
