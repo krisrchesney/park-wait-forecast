@@ -66,16 +66,16 @@ Parks are listed in `config/config.yaml` with their timezones (checked against t
 
 ## Results
 
-One recorded run on Nov 8, 2026 (the training-row count, positive rate and persistence AUC come from that run's `build` console output, the snapshot count is the row count of the Parquet lake, the test-window counts are derived from the local DuckDB warehouse with the repo's own time split, and model metrics come from the model card; the model card and `reports/` are local artifacts, not committed): model **v20261108T164742Z** (LightGBM champion), built from 453,112 snapshots (Oct 20 to Nov 8, 2026) into 186,469 training rows. Positive rate (wait of 45+ minutes in an hour, ride still open) is 9.5%. The test window is the newest 20% of rows, Nov 4 15:10 to Nov 8 11:30 UTC (about 3.8 days: 37,294 rows, 3,960 positives or 10.6%, 146 rides).
+One recorded run on Nov 8, 2026 (the training-row count, positive rate and persistence AUC come from that run's `build` console output, the snapshot count is the row count of the Parquet lake, the test-window counts and persistence average precision are derived from the local DuckDB warehouse with the repo's own time split, and model metrics come from the model card; the model card and `reports/` are local artifacts, not committed): model **v20261108T164742Z** (LightGBM champion), built from 453,112 snapshots (Oct 20 to Nov 8, 2026) into 186,469 training rows. Positive rate (wait of 45+ minutes in an hour, ride still open) is 9.5%. The test window is the newest 20% of rows, Nov 4 15:10 to Nov 8 11:30 UTC (about 3.8 days: 37,294 rows, 3,960 positives or 10.6%, 146 rides).
 
 | Model | ROC AUC | Avg precision | Brier | ECE |
 |---|---|---|---|---|
-| Persistence ("same as now") | 0.947 | not printed | not computed | not computed |
+| Persistence ("same as now") | 0.947 | 0.692 | n/a | n/a |
 | Logistic baseline | 0.962 | 0.789 | 0.0436 | 0.0086 |
 | HistGradientBoosting | 0.968 | 0.813 | 0.0407 | 0.0072 |
 | **LightGBM (champion)** | **0.969** | **0.820** | **0.0399** | **0.0067** |
 
-**Does it beat "same as now"? On ROC AUC, yes by 0.022 (0.969 vs 0.947), on one test window of about 3.8 days.** There is no confidence interval, consecutive snapshots of a ride are highly autocorrelated, and persistence was scored on AUC only, so treat the margin as suggestive, not established. Persistence alone reaches 0.947 and a plain logistic model on all 16 features reaches 0.962, so the gradient-boosted gain over logistic is small. The champion was chosen on average precision over four rolling folds (0.819 vs 0.765 for logistic); persistence was not scored on those folds.
+**Does it beat "same as now"? On ROC AUC, yes by 0.022 (0.969 vs 0.947), on one test window of about 3.8 days.** There is no confidence interval, consecutive snapshots of a ride are highly autocorrelated, and persistence was scored on this window only, so treat the margin as suggestive, not established. On average precision the gap is larger (0.820 vs 0.692, against 0.106 for a random ranking). Brier and ECE do not apply to persistence: its score is a wait in minutes, not a probability. Persistence alone reaches 0.947 and a plain logistic model on all 16 features reaches 0.962, so the gradient-boosted gain over logistic is small. The champion was chosen on average precision over four rolling folds (0.819 vs 0.765 for logistic); persistence was not scored on those folds.
 
 Top SHAP features: ride's mean wait that day, current wait, share of the park's rides open, local time of day, ride's mean wait at the same hour (local file `reports/shap_importance.png`).
 
