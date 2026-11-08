@@ -39,3 +39,5 @@ This project is tracked on the user's Command Center Projects tab as `devproject
 ## Lessons
 One line per lesson: what went wrong or what review caught. Read these before starting a ticket.
 - The shared rolling-fold patch assumed a calibration argument this repo's build_candidates does not take; a failing test was pushed because the chain checked the wrong exit code. Gate commits on the test runner's exit code.
+- origin/main was rewritten (history cleanup, new noreply identity) between a fetch and a merge, so a branch cut earlier shared no history with it. Fetch right before merging, and re-author commits with the repo's public identity before pushing (T-1).
+- A page headline named a peak hour off a flat curve and the audit rejected it. Name a peak only when it clearly beats the next-best hour, and disclose any hand-set cut-off that shapes a chart (T-2).
