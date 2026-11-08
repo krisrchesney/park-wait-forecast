@@ -67,17 +67,17 @@ def latest_forecast(
 def hourly_profile(feats: pd.DataFrame, threshold: float, min_rows: int = MIN_CELL_ROWS) -> dict | None:
     """Share of open-ride snapshots at or above `threshold` minutes, by local hour, weekdays vs weekends.
     Returns None when no hour has enough rows in both groups."""
-    op = feats[(feats["is_open"] == 1) & feats["wait_open"].notna()].copy()
-    if op.empty:
+    op_all = feats[(feats["is_open"] == 1) & feats["wait_open"].notna()].copy()
+    if op_all.empty:
         return None
-    # Only chart hours when most of the park is running. Late at night a handful of popular rides stay
+    op_all["hit"] = (op_all["wait_open"] >= threshold).astype(float)
+    # Only chart hours when much of the park is running. Late at night a handful of popular rides stay
     # open, so their share of long waits would look like a peak that is really a selection effect.
-    breadth = op.groupby(["park_id", "observed_at", "local_hour"]).size().groupby("local_hour").mean()
+    breadth = op_all.groupby(["park_id", "observed_at", "local_hour"]).size().groupby("local_hour").mean()
     busy_hours = set(breadth[breadth >= BREADTH_SHARE * breadth.max()].index)
-    op = op[op["local_hour"].isin(busy_hours)].copy()
+    op = op_all[op_all["local_hour"].isin(busy_hours)].copy()
     if op.empty:
         return None
-    op["hit"] = (op["wait_open"] >= threshold).astype(float)
     op["wk"] = np.where(op["local_dow"] >= 5, "weekend", "weekday")
     g = op.groupby(["wk", "local_hour"])["hit"].agg(["mean", "size"]).reset_index()
     ok = None
@@ -91,12 +91,22 @@ def hourly_profile(feats: pd.DataFrame, threshold: float, min_rows: int = MIN_CE
     hours = [h for h in range(lo, hi + 1) if h in ok]
     if len(hours) < 4:
         return None
-    out: dict = {"hours": hours}
+    out: dict = {"hours": hours, "cutoff": BREADTH_SHARE}
     for wk in ("weekday", "weekend"):
         sub = g[g["wk"] == wk].set_index("local_hour")
         out[wk] = [float(sub.loc[h, "mean"]) for h in hours]
-        out[f"{wk}_days"] = int(op[op["wk"] == wk]["local_date"].nunique())
-    out["rows"] = int(len(op))
+    kept = op[op["local_hour"].isin(hours)]
+    for wk in ("weekday", "weekend"):
+        out[f"{wk}_pooled"] = float(kept[kept["wk"] == wk]["hit"].mean())
+    daily = kept.groupby(["wk", "local_date"])["hit"].mean()
+    wdd, wed = daily["weekday"], daily["weekend"]
+    out["weekday_days"], out["weekend_days"] = int(len(wdd)), int(len(wed))
+    out["weekday_range"] = (float(wdd.min()), float(wdd.max()))
+    out["weekend_inside"] = int(((wed >= wdd.min()) & (wed <= wdd.max())).sum())
+    by_hour = op_all.groupby("local_hour")["hit"].agg(["mean", "size"])
+    left_out = by_hour[~by_hour.index.isin(hours) & (by_hour["size"] >= min_rows)]
+    out["left_out_max"] = float(left_out["mean"].max()) if len(left_out) else None
+    out["rows"] = int(len(kept))
     return out
 
 
@@ -121,6 +131,7 @@ def holdout_curves(
         fpr, tpr, _ = roc_curve(y, s)
         out[name] = np.interp(grid, fpr, tpr)
         out[f"auc_{name}"] = float(roc_auc_score(y, s))
+    out["persistence_levels"] = int(np.unique(scores["persistence"]).size)
     ts = pd.to_datetime(test[ts_col])
     out["start"], out["end"] = ts.min(), ts.max()
     out["days"] = (out["end"] - out["start"]).total_seconds() / 86400
@@ -134,17 +145,22 @@ def _chance(p: float) -> str:
     return f"{p * 100:.1f}%" if p < 0.1 else f"{p * 100:.0f}%"
 
 
+def _caught(v: float) -> str:
+    """Whole percents, but never show 99.5% to 99.99% as a flat 100%."""
+    return ">99%" if 0.995 <= v < 1 else f"{v * 100:.0f}%"
+
+
 def evidence_html(ev: dict, card: dict) -> str:
     grid = ev["grid"]
     at = lambda key, p: float(np.interp(p, grid, ev[key])) * 100  # noqa: E731
     gap = ev["auc_model"] - ev["auc_persistence"]
     gap_text = f"a difference of {gap:+.3f} for the model"
     if gap >= 0.01:
-        lead ="On recent held-out data the model ranks long waits better than “same as now”"
+        lead = "On recent held-out data the model ranks long waits better than “same as now”"
     elif gap <= -0.01:
-        lead ="On recent held-out data “same as now” ranks long waits better than the model"
+        lead = "On recent held-out data “same as now” ranks long waits better than the model"
     else:
-        lead ="On recent held-out data the model and “same as now” rank long waits about equally well"
+        lead = "On recent held-out data the model and “same as now” rank long waits about equally well"
     series = [
         {"name": "This model", "short": "model", "var": "--s1", "y": ev["model"]},
         {"name": "“Same as now”", "short": "same as now", "var": "--s2", "y": ev["persistence"]},
@@ -162,7 +178,7 @@ def evidence_html(ev: dict, card: dict) -> str:
         xtick_fmt=lambda v: f"{v * 100:.0f}%",
         ytick_fmt=lambda v: f"{v * 100:.0f}%",
         labels=[f"False-alarm rate {g * 100:.0f}%" for g in grid],
-        value_fmt=lambda v: f"{v * 100:.0f}%",
+        value_fmt=_caught,
         table_x=[0.01, 0.05, 0.10, 0.20, 0.50],
         table_head=["1% false alarms", "5%", "10%", "20%", "50%"],
         table_row_label="Forecast",
@@ -182,6 +198,7 @@ def evidence_html(ev: dict, card: dict) -> str:
         f"vs <b>{at('persistence', 0.10):.0f}%</b> for “same as now”. "
         "Move along the chart to read other false-alarm rates; the dashed line is a random guess.</p>"
         + chart
+        + f'<p class="muted">“Same as now” takes only {ev["persistence_levels"]} distinct scores, so its curve is straight lines between its real operating points and its numbers at a given false-alarm rate are interpolated.</p>'
         + '<p class="muted">Read the margin as suggestive: it comes from one short window with no confidence '
         "interval, and consecutive snapshots of a ride are highly correlated. Persistence is scored by "
         "ranking on the current wait; it is the bar a forecast has to clear.</p>"
@@ -191,6 +208,14 @@ def evidence_html(ev: dict, card: dict) -> str:
     )
 
 
+def _peak_text(hours: np.ndarray, a: np.ndarray) -> str:
+    """Name a peak hour only when it clearly beats the next-best hour (by at least a point)."""
+    order = np.argsort(a)[::-1]
+    if len(a) > 1 and a[order[0]] - a[order[1]] < 0.01:
+        return "no single peak hour (the top two hours are within a point of each other)"
+    return f"highest around {_hour_label(hours[order[0]])} ({a[order[0]] * 100:.0f}%)"
+
+
 def profile_html(prof: dict | None, threshold: float) -> str:
     if prof is None:
         return (
@@ -198,7 +223,6 @@ def profile_html(prof: dict | None, threshold: float) -> str:
         )
     hours = np.array(prof["hours"], float)
     wd, we = np.array(prof["weekday"]), np.array(prof["weekend"])
-    pk = lambda a: int(hours[int(np.argmax(a))])  # noqa: E731
     ymax = max(0.1, float(np.ceil(max(wd.max(), we.max()) * 10) / 10))
     series = [
         {"name": f"Weekdays ({prof['weekday_days']} days)", "short": "weekdays", "var": "--s1", "y": wd},
@@ -226,21 +250,32 @@ def profile_html(prof: dict | None, threshold: float) -> str:
         unit="",
         xticks=min(6, len(hours)),
     )
-    wd_peak, we_peak = pk(wd), pk(we)
-    diff = float(we.max() - wd.max())
+    wp, ep = prof["weekday_pooled"], prof["weekend_pooled"]
+    span = f"{_hour_label(hours[0])} to {_hour_label(hours[-1])}"
+    diff = ep - wp
     if abs(diff) < 0.01:
         cmp = "about the same on weekends as on weekdays"
     else:
-        cmp = f"{'higher' if diff > 0 else 'lower'} on weekends than on weekdays"
-    gentle = ", so the peak is a gentle one" if max(wd.max() - wd.min(), we.max() - we.min()) < 0.08 else ""
-    head = (
-        f"<h3>Long waits peak around {_hour_label(wd_peak)} on weekdays and {_hour_label(we_peak)} on weekends</h3>"
-        f"<p>Across all rides, in {prof['rows']:,} open-ride snapshots from the busy hours (when most of the park is running), the share of rides at {threshold:.0f}+ "
-        f"minutes reaches <b>{wd.max() * 100:.0f}%</b> on weekdays and <b>{we.max() * 100:.0f}%</b> on weekends "
-        f"at the peak hour: {cmp}. Across the charted hours the weekday share moves by only {(wd.max() - wd.min()) * 100:.0f} points between its lowest and highest hour, and the weekend share by {(we.max() - we.min()) * 100:.0f}{gentle}. Only {prof['weekend_days']} weekend days and {prof['weekday_days']} weekdays "
-        "have been collected, so holidays and school terms may be driving some of this.</p>"
+        cmp = f"{abs(diff) * 100:.0f} points {'higher' if diff > 0 else 'lower'} on weekends than on weekdays"
+    lo, hi = prof["weekday_range"]
+    out = (
+        f"<h3>{wp * 100:.0f}% of open-ride snapshots on weekdays and {ep * 100:.0f}% on weekends were at "
+        f"{threshold:.0f}+ minutes</h3>"
+        f"<p>Pooled over the hours {span} (local), across all rides and {prof['rows']:,} open-ride snapshots, "
+        f"the share is {cmp}. By hour, weekdays: {_peak_text(hours, wd)}. Weekends: {_peak_text(hours, we)}. "
+        f"The weekend figure rests on only {prof['weekend_days']} days, and {prof['weekend_inside']} of them fall "
+        f"inside the range of the {prof['weekday_days']} weekdays ({lo * 100:.0f}% to {hi * 100:.0f}% a day), "
+        "so treat it as a hint: holidays and school terms may be driving it.</p>"
     )
-    return head + chart
+    left = prof.get("left_out_max")
+    extra = f" (up to {left * 100:.0f}% in the hours left out)" if left is not None else ""
+    note = (
+        f'<p class="muted">Hours are charted only when at least {prof["cutoff"] * 100:.0f}% as many rides are open '
+        f"as in the busiest hour ({span}). Later and earlier hours are left out because only a few popular rides are "
+        f"open then, which inflates the share{extra}. This cut-off was set after looking at this data, and moving it "
+        "moves the peak hour.</p>"
+    )
+    return out + chart + note
 
 
 def park_table(fc: pd.DataFrame, feats: pd.DataFrame, names: dict[int, str], threshold: float) -> str:
@@ -278,7 +313,10 @@ def forecast_html(
         )
         return msg, f"No open rides at the newest snapshot ({when})."
     snap = fc["observed_at"].max()
-    local = pd.Timestamp(snap).tz_localize("UTC").tz_convert(tz[int(fc.iloc[0]["park_id"])])
+    zones = sorted({tz[int(p)] for p in fc["park_id"].unique()})
+    local_txt = " / ".join(
+        pd.Timestamp(snap).tz_localize("UTC").tz_convert(z).strftime("%I:%M %p %Z, %a").lstrip("0") for z in zones
+    )
     age_h = (pd.Timestamp(built.replace(tzinfo=None)) - snap).total_seconds() / 3600
     k, n = int((fc["prob"] >= 0.5).sum()), len(fc)
     if age_h > 7:
@@ -288,10 +326,10 @@ def forecast_html(
         )
     else:
         stale = ""
-    stamp = f"{snap:%Y-%m-%d %H:%M} UTC ({local:%I:%M %p %Z}, {local:%a})".replace(" 0", " ")
+    stamp = f"{snap:%Y-%m-%d %H:%M} UTC ({local_txt})"
     banner = f"Newest snapshot {snap:%Y-%m-%d %H:%M} UTC, {age_h:.1f} h old when this page was built."
     if k == 0:
-        head = f"<h3>No open ride is forecast above 50% to reach {threshold:.0f} minutes an hour after the snapshot</h3>"
+        head = f"<h3>No open ride is forecast at 50% or more to reach {threshold:.0f} minutes an hour after the snapshot</h3>"
     else:
         head = (
             f"<h3>{k} of {n} open rides are forecast at 50% or more to reach {threshold:.0f} minutes "
@@ -319,6 +357,7 @@ def forecast_html(
 def render(
     *, built: datetime, card: dict, version: str, n_rides: int, n_snaps: int, first: pd.Timestamp, last: pd.Timestamp,
     n_parks: int, forecast: str, banner: str, profile: str, evidence: str, threshold: float, horizon: int,
+    snapshot_minutes: int = 10,
 ) -> str:
     m = card["metrics"]["all_candidates"][card["champion"]]
     days = (last - first).total_seconds() / 86400
@@ -371,13 +410,13 @@ footer {{ margin-top:40px; font-size:.85rem; }}
 <div class="hero">
 <div>
 <p class="lede">Will a ride's posted wait be {threshold:.0f} minutes or more an hour from now? This page scores every
-open ride at six Orlando parks from its recent waits, what the rest of the park is doing and the local time of day,
+open ride at the {n_parks} parks it tracks from its recent waits, what the rest of the park is doing and the local time of day,
 then checks the forecast against the simplest alternative: “the wait stays what it is now.”</p>
 <p class="muted">Forecast for {horizon} minutes after the newest snapshot. Built {html.escape(stamp)}. {html.escape(banner)}
 Wait-time data is <a href="{QT}">Powered by Queue-Times.com</a>.</p>
 </div>
 <div class="stats">
-  <div class="stat"><b>{n_rides:,}</b>rides across {n_parks} parks</div>
+  <div class="stat"><b>{n_rides:,}</b>rides and attractions across {n_parks} parks</div>
   <div class="stat"><b>{n_snaps:,}</b>snapshots over {days:.0f} days ({first:%b %d} to {last:%b %d, %Y})</div>
   <div class="stat"><b>{html.escape(card["champion"])}</b>model <code>{html.escape(version)}</code></div>
   <div class="stat"><b>{m["roc_auc"]:.3f}</b>test ROC AUC (avg precision {m["avg_precision"]:.3f})</div>
@@ -388,7 +427,7 @@ Wait-time data is <a href="{QT}">Powered by Queue-Times.com</a>.</p>
 <section>
 <h3>How it works</h3>
 <ul>
-<li>Every 10 minutes the posted wait of each ride is recorded from <a href="{QT}">Queue-Times.com</a>.</li>
+<li>Every {snapshot_minutes} minutes the posted wait of each ride is recorded from <a href="{QT}">Queue-Times.com</a>.</li>
 <li>A model trained on this history, split by time so it never sees the future, estimates the chance that a ride that
 is open now is still open in an hour with a wait of {threshold:.0f} minutes or more.</li>
 <li>The page is rebuilt from the newest data each time a collection batch finishes.</li>
@@ -482,6 +521,7 @@ def main() -> None:
         evidence=evidence_html(ev, card),
         threshold=threshold,
         horizon=horizon,
+        snapshot_minutes=int(qt.get("snapshot_minutes", 10)),
     )
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)

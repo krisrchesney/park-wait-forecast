@@ -139,3 +139,49 @@ def test_small_chances_are_not_all_shown_as_zero():
     assert build_site._chance(0.0004) == "<0.1%"
     assert build_site._chance(0.034) == "3.4%"
     assert build_site._chance(0.46) == "46%"
+
+
+def test_ride_names_are_escaped(parts):
+    feats, _ = parts
+    fc = build_site.latest_forecast(feats, WaitModel(), FEATURES, max_age_min=10_000)
+    fc["ride_name"] = "<script>alert(1)</script>"
+    forecast, _ = build_site.forecast_html(
+        fc, feats, {1: "Park One", 2: "Park Two"}, TZ, datetime(2026, 8, 17, tzinfo=UTC), 10, 45, 60
+    )
+    assert "<script>alert(1)</script>" not in forecast
+    assert "&lt;script&gt;" in forecast
+
+
+def test_snapshot_stamp_has_no_stray_zero_and_uses_each_parks_zone(parts):
+    feats, _ = parts
+    fc = build_site.latest_forecast(feats, WaitModel(), FEATURES, max_age_min=10_000)
+    forecast, _ = build_site.forecast_html(
+        fc, feats, {1: "Park One", 2: "Park Two"}, TZ, datetime(2026, 8, 17, tzinfo=UTC), 10, 45, 60
+    )
+    assert " / " in forecast  # the synthetic parks sit in two time zones, so both local times are shown
+    stamp = forecast.split("Forecast made from the snapshot of <b>")[1].split("</b>")[0]
+    local_part = stamp.split(" UTC (")[1]
+    assert not any(part.strip().startswith("0") for part in local_part.rstrip(")").split(" / "))
+
+
+def test_peak_hour_is_only_named_when_it_clearly_wins():
+    hours = np.arange(9, 15, dtype=float)
+    flat = np.array([0.10, 0.11, 0.111, 0.10, 0.10, 0.10])
+    assert "no single peak hour" in build_site._peak_text(hours, flat)
+    clear = np.array([0.05, 0.08, 0.15, 0.09, 0.07, 0.05])
+    assert "highest around 11 AM" in build_site._peak_text(hours, clear)
+
+
+def test_profile_text_comes_from_the_pooled_numbers(parts):
+    feats, _ = parts
+    prof = build_site.hourly_profile(feats, 45, min_rows=20)
+    text = build_site.profile_html(prof, 45)
+    assert f"{prof['weekday_pooled'] * 100:.0f}% of open-ride snapshots on weekdays" in text
+    assert "cut-off was set after looking at this data" in text  # the busy-hours filter is disclosed
+    assert prof["weekend_inside"] <= prof["weekend_days"]
+
+
+def test_near_certain_catch_rates_are_not_shown_as_a_flat_100():
+    assert build_site._caught(0.9995) == ">99%"
+    assert build_site._caught(0.9954) == ">99%"
+    assert build_site._caught(0.91) == "91%"

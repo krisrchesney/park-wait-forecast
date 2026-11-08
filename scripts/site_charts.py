@@ -19,7 +19,7 @@ from collections.abc import Callable
 import numpy as np
 
 CHART_CSS = """
-:root { --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --grid:#e3e2dc; --axis:#c3c2b7; --ink-muted:#898781; --surface:#fbfbfa; }
+:root { --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --grid:#e3e2dc; --axis:#c3c2b7; --ink-muted:#6f6d66; --surface:#fbfbfa; }
 @media (prefers-color-scheme: dark) { :root { --s1:#3987e5; --s2:#d95926; --s3:#199e70; --grid:#2c2c2a; --axis:#383835; --surface:#151513; } }
 .chart { margin:12px 0 4px; overflow-x:auto; }
 .chart svg { width:100%; min-width:330px; max-width:620px; height:auto; display:block; font:13px system-ui,-apple-system,"Segoe UI",sans-serif; }
