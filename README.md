@@ -66,7 +66,7 @@ Parks are listed in `config/config.yaml` with their timezones (checked against t
 
 ## Results
 
-One recorded run on Nov 8, 2026 (the snapshot count, row count, positive rate and persistence AUC come from that run's `build` console output; model metrics come from the model card): model **v20261108T164742Z** (LightGBM champion), built from 453,112 snapshots (Oct 20 to Nov 8, 2026) into 186,469 training rows. Positive rate (wait of 45+ minutes in an hour, ride still open) is 9.5%. The test window is the newest 20% of rows, Nov 4 15:10 to Nov 8 11:30 UTC (about 3.8 days: 37,294 rows, 3,956 positives or 10.6%, 146 rides).
+One recorded run on Nov 8, 2026 (the training-row count, positive rate and persistence AUC come from that run's `build` console output, the snapshot count is the row count of the Parquet lake, the test-window counts are derived from the local DuckDB warehouse with the repo's own time split, and model metrics come from the model card; the model card and `reports/` are local artifacts, not committed): model **v20261108T164742Z** (LightGBM champion), built from 453,112 snapshots (Oct 20 to Nov 8, 2026) into 186,469 training rows. Positive rate (wait of 45+ minutes in an hour, ride still open) is 9.5%. The test window is the newest 20% of rows, Nov 4 15:10 to Nov 8 11:30 UTC (about 3.8 days: 37,294 rows, 3,960 positives or 10.6%, 146 rides).
 
 | Model | ROC AUC | Avg precision | Brier | ECE |
 |---|---|---|---|---|
@@ -75,13 +75,13 @@ One recorded run on Nov 8, 2026 (the snapshot count, row count, positive rate an
 | HistGradientBoosting | 0.968 | 0.813 | 0.0407 | 0.0072 |
 | **LightGBM (champion)** | **0.969** | **0.820** | **0.0399** | **0.0067** |
 
-**Does it beat "same as now"? On ROC AUC, yes by 0.022 (0.969 vs 0.947), on one test window of about 3.8 days.** There is no confidence interval, consecutive snapshots of a ride are highly autocorrelated, and persistence was scored on AUC only, so treat the margin as suggestive, not established. Most of the signal is the current wait; a plain logistic model already reaches 0.962, so the gradient-boosted gain over it is small. The champion was chosen on average precision over four rolling folds (0.819 vs 0.765 for logistic); persistence was not scored on those folds.
+**Does it beat "same as now"? On ROC AUC, yes by 0.022 (0.969 vs 0.947), on one test window of about 3.8 days.** There is no confidence interval, consecutive snapshots of a ride are highly autocorrelated, and persistence was scored on AUC only, so treat the margin as suggestive, not established. Persistence alone reaches 0.947 and a plain logistic model on all 16 features reaches 0.962, so the gradient-boosted gain over logistic is small. The champion was chosen on average precision over four rolling folds (0.819 vs 0.765 for logistic); persistence was not scored on those folds.
 
-Top SHAP features: ride's mean wait that day, current wait, share of the park's rides open, local time of day, ride's mean wait at the same hour (`reports/shap_importance.png`).
+Top SHAP features: ride's mean wait that day, current wait, share of the park's rides open, local time of day, ride's mean wait at the same hour (local file `reports/shap_importance.png`).
 
 Drift: the report says "alert", but it compares training data with only the most recent 1,000 rows (the report's default window) and has no live AUC yet, so it says nothing useful about drift. It flags all 16 features at PSI >= 0.25, including calendar features (weekday, weekend, time of day) that differ between short windows by construction, so the alert is uninformative. Treat it as not yet meaningful.
 
-Disclosure: the champion was selected on four rolling folds inside the training window (rows before Nov 4 15:10 UTC); the test window was not used for selection, but this 19.5-day history is the only data seen so far. Data collected after Nov 8, 2026 is untouched evidence. Only about 2.8 weeks have been seen, with no holidays or school-term effects.
+Disclosure: the champion was selected on four rolling folds inside the training window (rows before Nov 4 15:10 UTC); the test window was not used for selection, but this 19.4-day history is the only data seen so far. The 60-minute label also overlaps the first hour of the test period. Data collected after Nov 8, 2026 is untouched evidence. Only about 2.8 weeks have been seen, with no holidays or school-term effects.
 
 ## Limitations
 
