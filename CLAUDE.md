@@ -15,7 +15,7 @@ Predicts whether an open theme-park ride's posted wait is 45 minutes or more one
 
 ## Conventions
 - Python 3.12 in `.venv` (`pip install -e ".[dev,train,explain,monitor]"`). Lint with ruff (line length 110); tests with pytest.
-- GitHub CLI: `gh` (REST only). Local git is 2.16: `scripts/data_sync.sh` does not work here; read data with `git archive origin/data raw | tar -x -C data`.
+- GitHub CLI is REST only here. Local git is 2.16: `scripts/data_sync.sh` does not work here; read data with `git archive origin/data raw | tar -x -C data`.
 - Site pages: every headline and claim is computed from the data at build time; nothing on the page may contradict its own chart.
 
 ## Never
@@ -34,7 +34,7 @@ This project is tracked on the user's Command Center Projects tab as `devproject
 - Treat an approved or answered ask as the user's own answer for routine local work and act on it. For anything public or that uses a secret (pushing, publishing, tokens), confirm once in chat first and say the page approval was seen.
 - When done, update the ask pinned with `if_version`: copy the status and answer, set `handledAt` and `handledBy`, and note the result in `lastActivity`. Add an ask when you need something only the user can give, and append a `usage` entry when a run finishes.
 - `scripts/health.py` is the shared definition of "healthy"; the daily `ml-portfolio-health` job runs it and updates the record.
-- Full rules: the private Command Center notes. Never put secrets or tokens in the database.
+- Full rules are kept in the private Command Center notes. Never put secrets or tokens in the database.
 
 ## Lessons
 One line per lesson: what went wrong or what review caught. Read these before starting a ticket.

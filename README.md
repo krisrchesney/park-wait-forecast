@@ -4,7 +4,7 @@ Forecasts, for an open theme-park ride, whether its posted wait will be **at lea
 
 Wait-time data is powered by [Queue-Times.com](https://queue-times.com). If you publish a page, app or write-up that shows this data, keep the attribution "Powered by Queue-Times.com" visible with a link.
 
-> Status: pipeline and tests are complete. **No real-data results are published here yet**: collection starts on your GitHub account, and the source only provides current values, so history exists only from your first run. Numbers will be added to Results after enough history; none are claimed before it.
+> Status: pipeline and tests are complete and collection is running on a schedule (started Nov 7, 2026). **No model results are published yet**: the source only provides current values, so history builds up one snapshot at a time, and numbers will be added to Results once there is enough of it. None are claimed before then.
 
 ## Why this project
 
@@ -66,7 +66,7 @@ Parks are listed in `config/config.yaml` with their timezones (checked against t
 
 ## Results
 
-_Not yet generated._ After enough real history, add: positive rate, the persistence baseline AUC printed by `build`, ROC AUC / average precision / ECE for the baseline and champion, the SHAP chart from `reports/`, and the Evidently drift report.
+_Not yet generated; waiting on history._ Planned once there is enough: positive rate, the persistence baseline AUC printed by `build`, ROC AUC / average precision / ECE for the baseline and champion, the SHAP chart from `reports/`, and the Evidently drift report.
 
 ## Limitations
 
