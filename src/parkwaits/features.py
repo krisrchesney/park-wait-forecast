@@ -11,6 +11,8 @@ Controls (each has a test):
   * Rows whose ride is closed at the target time are dropped: a closed ride has no wait, so the question
     is "if it is still open". This is stated as a limitation, not hidden.
   * Time features use each park's local clock (America/New_York is not the same hour as UTC).
+  * Calendar features (holidays, long weekends, school breaks) depend only on the local DATE, which is
+    fixed in advance, so they cannot carry information from after the prediction moment.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
 
+from parkwaits.calendar_features import CALENDAR_FEATURES, calendar_features
 from parkwaits.lake import load_lake
 from parkwaits.storage import connect, write_frame
 
@@ -38,7 +41,7 @@ WAIT_FEATURES = [
 PARK_FEATURES = ["park_mean_wait", "park_open_frac", "park_n_open"]
 HISTORY_FEATURES = ["ride_hist_mean_same_hour", "ride_hist_mean_day"]
 TIME_FEATURES = ["local_minutes", "local_dow", "is_weekend"]
-FEATURES = WAIT_FEATURES + PARK_FEATURES + HISTORY_FEATURES + TIME_FEATURES
+FEATURES = WAIT_FEATURES + PARK_FEATURES + HISTORY_FEATURES + TIME_FEATURES + CALENDAR_FEATURES
 KEYS = ["park_id", "ride_id"]
 
 
@@ -99,9 +102,14 @@ def _history_mean(df: pd.DataFrame, group: list[str], name: str) -> pd.Series:
     return pd.Series(merged["prior_mean"].to_numpy(), index=df.index, name=name)
 
 
-def compute_features(snaps: pd.DataFrame, tz_by_park: dict[int, str]) -> pd.DataFrame:
-    """Add features to every snapshot row. Accepts raw lake rows; returns a copy sorted by ride and time."""
+def compute_features(
+    snaps: pd.DataFrame, tz_by_park: dict[int, str], calendar: dict[str, Any] | None = None
+) -> pd.DataFrame:
+    """Add features to every snapshot row. Accepts raw lake rows; returns a copy sorted by ride and time.
+
+    `calendar` is the config's `calendar` block (school breaks); without it is_school_break is NaN."""
     df = _local_clock(_clean(snaps), tz_by_park)
+    df[CALENDAR_FEATURES] = calendar_features(df["local_date"], calendar)
 
     df["wait_now"] = df["wait_open"]
     df["wait_lag_30"] = _lag(df, 30, "wait_lag_30")
@@ -138,8 +146,9 @@ def build_training_frame(
     wait_threshold_min: float = 45,
     min_rows: int = 2000,
     min_positives: int = 50,
+    calendar: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
-    df = compute_features(snaps, tz_by_park)
+    df = compute_features(snaps, tz_by_park, calendar)
     target = df[[*KEYS, "observed_at", "is_open", "wait_time"]].copy()
     target["observed_at"] = target["observed_at"] - pd.Timedelta(minutes=horizon_minutes)
     target = target.rename(columns={"is_open": "target_open", "wait_time": "target_wait"})
@@ -186,6 +195,7 @@ def build_training_table(cfg: dict[str, Any]) -> int:
         wait_threshold_min=float(d.get("wait_threshold_min", 45)),
         min_rows=int(d.get("min_rows", 2000)),
         min_positives=int(d.get("min_positives", 50)),
+        calendar=cfg.get("calendar"),
     )
     print(
         f"Positive rate {frame['label'].mean():.3f}. Persistence baseline AUC on newest 20%: "

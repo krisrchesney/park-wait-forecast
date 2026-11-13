@@ -494,7 +494,7 @@ def main() -> None:
     if snaps.empty:
         raise SystemExit("The lake has no queue_times data. Run collect (or restore the data branch) first.")
     model, card, version = load_current(mcfg["registry_dir"])
-    feats = compute_features(snaps, tz)
+    feats = compute_features(snaps, tz, cfg.get("calendar"))
     fc = latest_forecast(feats, model, card["features"])
 
     con = connect(d["db_path"])

@@ -33,6 +33,23 @@ data:
   wait_threshold_min: 45
   min_rows: 2000
   min_positives: 50
+# Student breaks from Orange County Public Schools' own 2026-2027 calendar (ocps.net, read 2026-11-13).
+# Typed in by hand per school year: dates outside `covered` get is_school_break = NaN (unknown), never 0.
+# Only multi-day breaks are listed; single holidays are in is_holiday. Update this block each school year.
+calendar:
+  covered:
+    from: 2026-08-03
+    to: 2027-05-31
+  school_breaks:
+  - name: Thanksgiving Break
+    start: 2026-11-23
+    end: 2026-11-27
+  - name: Winter Break (plus Jan 4 teacher workday and student holiday)
+    start: 2026-12-21
+    end: 2027-01-04
+  - name: Spring Break (plus Mar 12 teacher workday and student holiday)
+    start: 2027-03-12
+    end: 2027-03-19
 model:
   description: 'Forecasts whether an open ride''s posted wait will be at least 45 minutes one hour from now, from
     its recent waits, park-wide conditions and the park''s local clock. Intended use: trip-planning hints, not guarantees.'
@@ -66,6 +83,9 @@ model:
   - local_minutes
   - local_dow
   - is_weekend
+  - is_holiday
+  - is_long_weekend
+  - is_school_break
   candidates:
   - logistic_baseline
   - hist_gbm
