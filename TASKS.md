@@ -15,9 +15,39 @@ Template:
 
 ## Ready
 
+### T-4: Weather features
+Status: Ready
+Owns: new weather module and tests; config
+Blocked by: T-3 merged; a weather source whose terms and hourly history are checked first
+Why: Rain, heat and cool days change both crowds and waits. Use observed conditions at the snapshot or a forecast issued before it, never later weather.
+Done when:
+- [ ] Source terms and attribution checked and recorded
+- [ ] Leakage test: a feature never uses weather observed after the snapshot
+- [ ] Before/after comparison on rolling folds, disclosed
+
+### T-5: Park event nights and park hours
+Status: Ready
+Owns: to be decided
+Blocked by: an official, machine-readable source of event-night dates and park hours (none found for Queue-Times)
+Why: Halloween and Christmas party nights and extended hours change evening crowds.
+Done when:
+- [ ] A sourced date list exists and its terms are checked
+
 ## In progress
 
 ## Review
+
+### T-3: Calendar features (holidays, long weekends, school breaks)
+Status: Review (ticket/T-3-calendar-features)
+Owns: src/parkwaits/calendar_features.py (new); src/parkwaits/features.py (feature list, compute_features calendar argument); config/config.yaml (calendar block, model.features); scripts/build_site.py (pass the calendar); tests/test_calendar_features.py (new); README (Decisions, Limitations)
+Blocked by: none
+Why: Account for longer or shorter waits on holidays and school breaks, from the date alone so nothing leaks.
+Done when:
+- [ ] Features depend only on the local date; a test proves it
+- [ ] Holiday dates match an independent source (OCPS's published holidays)
+- [ ] Dates outside the typed-in calendar are NaN, not 0
+- [ ] Before/after comparison on the same data is recorded and disclosed (no measurable change yet)
+- [ ] check passes, and the page build still works with the new model
 
 ## Done
 

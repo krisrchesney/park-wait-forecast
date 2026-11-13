@@ -16,7 +16,7 @@ It is a real forecasting problem with a strong naive baseline (waits change slow
 Queue-Times API --collect-loop (every 10 min, one CI job)--> Parquet lake (data/raw/queue_times)
                                    |  pushed once per job to an orphan `data` branch by scripts/data_sync.sh
                                    v
-       build (lags, rolling waits, park-wide state, local clock, prior-day history) --> DuckDB
+       build (lags, rolling waits, park-wide state, local clock, calendar, prior-day history) --> DuckDB
                                    v
         train: logistic baseline vs HistGradientBoosting vs LightGBM  (MLflow)
                                    v
@@ -62,6 +62,7 @@ Parks are listed in `config/config.yaml` with their timezones (checked against t
 - **One long CI job instead of many scheduled runs.** Pushing history after every snapshot would add about 100 commits a day. The loop polls inside one job and pushes once.
 - **Insert-only snapshots keyed by (park, ride, 10-minute bucket).** Re-running in the same bucket stores nothing new.
 - **Missing data is dropped, not filled.** Gaps shrink the training set but never invent targets.
+- **Calendar features come from the date alone (added 2026-11-13).** `is_holiday`, `is_long_weekend` and `is_school_break` are fixed in advance, so they cannot leak the future. School breaks are Orange County Public Schools' own 2026-27 calendar (ocps.net), typed into `config/config.yaml`; dates outside that school year are unknown (NaN), never zero. They were added after the first results, so they are disclosed here: on the 237,767-row Nov 13 build they changed nothing measurable (champion rolling-fold average precision 0.8152 with them vs 0.8155 without), because the 25 days collected so far contain no school break and no long weekend. Their effect can only be judged on data from Thanksgiving week (Nov 23 to 27) onward. Park event nights (Halloween and Christmas parties) are not included: no official date source was found.
 - **DuckDB + Parquet, not a warehouse.** Free and local; no managed-warehouse experience is claimed.
 
 ## Results
@@ -85,7 +86,7 @@ Disclosure: the champion was selected on four rolling folds inside the training 
 
 ## Limitations
 
-- Only a few weeks of history at first: no seasonality, holidays or school-term effects.
+- Only a few weeks of history at first: holiday, long-weekend and school-break features exist but have not yet seen a school break or a long weekend, so no seasonality or holiday effect is learned.
 - Conditional on the ride staying open.
 - Posted waits are park-published estimates, not measured waits.
 - Scheduled GitHub runs can start late or be skipped, leaving gaps.
