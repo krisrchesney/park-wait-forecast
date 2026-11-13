@@ -129,3 +129,24 @@ def calendar_features(local_dates: pd.Series, calendar: dict[str, Any] | None = 
         covered = py.map(lambda d: span[0] <= d <= span[1])
         out["is_school_break"] = in_break.where(covered, np.nan)
     return out
+
+
+def coverage_warning(dates: pd.Series, calendar: dict[str, Any] | None) -> str | None:
+    """A message when the data runs past the typed-in school calendar (or there is none), else None.
+
+    The list is entered by hand per school year, so it goes stale quietly: after `covered.to` every row
+    gets NaN for is_school_break. Callers print this so the gap is noticed."""
+    _, span = school_break_dates(calendar)
+    if span is None:
+        return "No school calendar is configured: is_school_break is unknown (NaN) for every row."
+    days = pd.to_datetime(dates).dt.date
+    if days.empty:
+        return None
+    if days.max() > span[1]:
+        return (
+            f"Data runs to {days.max()}, past the school calendar's last covered date {span[1]}: "
+            "is_school_break is unknown (NaN) after it. Add the next school year to config `calendar`."
+        )
+    if days.min() < span[0]:
+        return f"Data starts {days.min()}, before the school calendar's first covered date {span[0]}."
+    return None

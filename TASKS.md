@@ -39,7 +39,7 @@ Done when:
 
 ### T-3: Calendar features (holidays, long weekends, school breaks)
 Status: Review (ticket/T-3-calendar-features)
-Owns: src/parkwaits/calendar_features.py (new); src/parkwaits/features.py (feature list, compute_features calendar argument); config/config.yaml (calendar block, model.features); scripts/build_site.py (pass the calendar); tests/test_calendar_features.py (new); README (Decisions, Limitations)
+Owns: src/parkwaits/calendar_features.py (new); src/parkwaits/features.py (feature list, compute_features calendar argument, monitored_features); src/parkwaits/cli.py (drift and monitor use monitored_features); config/config.yaml (calendar block, model.features); scripts/build_site.py (pass the calendar); tests/test_calendar_features.py (new); README (Decisions, Limitations)
 Blocked by: none
 Why: Account for longer or shorter waits on holidays and school breaks, from the date alone so nothing leaks.
 Done when:

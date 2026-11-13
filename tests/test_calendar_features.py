@@ -10,11 +10,13 @@ import yaml
 from parkwaits.calendar_features import (
     CALENDAR_FEATURES,
     calendar_features,
+    coverage_warning,
     holiday_dates,
     long_weekend_dates,
     us_federal_holidays,
 )
-from parkwaits.features import compute_features
+from parkwaits.drift import drift_report
+from parkwaits.features import FEATURES, compute_features, monitored_features
 
 CAL = {
     "covered": {"from": "2026-08-03", "to": "2027-05-31"},
@@ -131,3 +133,38 @@ def test_configured_calendar_is_well_formed():
     assert all(a_end < b_start for (_, a_end), (b_start, _) in zip(spans, spans[1:], strict=False))
     f = feats(["2026-11-25", "2026-12-24"], calendar=cfg)
     assert f["is_school_break"].tolist() == [1, 1] and not np.isnan(f.to_numpy()).any()
+
+
+def test_calendar_columns_do_not_change_with_waits_other_rides_or_other_rows():
+    base = _ride(["2026-11-24 15:00", "2026-11-24 15:10", "2026-11-28 15:00"])
+    changed = base.assign(wait_time=[90.0, 5.0, 61.0], is_open=[1, 0, 1])
+    other = pd.concat([changed, _ride(["2026-12-25 12:00"]).assign(ride_id=2)])
+    tz = {1: "America/New_York"}
+    a = compute_features(base, tz, CAL).set_index(["ride_id", "observed_at"])[CALENDAR_FEATURES]
+    b = compute_features(other, tz, CAL).set_index(["ride_id", "observed_at"])[CALENDAR_FEATURES]
+    pd.testing.assert_frame_equal(a, b.loc[a.index])
+
+
+def test_calendar_features_are_in_the_model_but_not_in_the_drift_check():
+    assert set(CALENDAR_FEATURES) <= set(FEATURES)
+    assert set(CALENDAR_FEATURES).isdisjoint(monitored_features(FEATURES))
+    assert [f for f in FEATURES if f not in CALENDAR_FEATURES] == monitored_features(FEATURES)
+
+
+def test_a_first_holiday_does_not_raise_a_drift_alarm():
+    rng = np.random.default_rng(0)
+    ref = pd.DataFrame({"wait_now": rng.normal(30, 10, 2000), "is_holiday": 0.0})
+    cur = pd.DataFrame({"wait_now": rng.normal(30, 10, 500), "is_holiday": 1.0})  # a whole holiday week
+    cfg = {"bins": 10, "psi_warn": 0.1, "psi_alert": 0.25, "auc_drop_alert": 0.05}
+    alarmed = drift_report(ref, cur, ["wait_now", "is_holiday"], cfg)
+    assert alarmed["overall_status"] == "alert"  # what would happen if the calendar were monitored
+    fine = drift_report(ref, cur, monitored_features(["wait_now", "is_holiday"]), cfg)
+    assert fine["overall_status"] != "alert"
+
+
+def test_a_stale_school_calendar_is_reported():
+    inside = pd.Series(pd.to_datetime(["2026-11-01", "2027-03-01"]))
+    assert coverage_warning(inside, CAL) is None
+    after = pd.Series(pd.to_datetime(["2027-05-30", "2027-06-02"]))
+    assert "past the school calendar" in coverage_warning(after, CAL)
+    assert "No school calendar" in coverage_warning(inside, None)

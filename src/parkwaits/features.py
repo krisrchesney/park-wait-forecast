@@ -17,13 +17,14 @@ Controls (each has a test):
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
 
-from parkwaits.calendar_features import CALENDAR_FEATURES, calendar_features
+from parkwaits.calendar_features import CALENDAR_FEATURES, calendar_features, coverage_warning
 from parkwaits.lake import load_lake
 from parkwaits.storage import connect, write_frame
 
@@ -43,6 +44,15 @@ HISTORY_FEATURES = ["ride_hist_mean_same_hour", "ride_hist_mean_day"]
 TIME_FEATURES = ["local_minutes", "local_dow", "is_weekend"]
 FEATURES = WAIT_FEATURES + PARK_FEATURES + HISTORY_FEATURES + TIME_FEATURES + CALENDAR_FEATURES
 KEYS = ["park_id", "ride_id"]
+
+
+def monitored_features(features: list[str]) -> list[str]:
+    """Features the drift check and monitoring report look at.
+
+    Calendar features are left out on purpose: they are constant in any training window without a
+    holiday or break, so the first holiday or break (an expected, known-in-advance change) would show up
+    as "major data drift" (PSI far above the alert threshold) and recommend a pointless retrain."""
+    return [f for f in features if f not in CALENDAR_FEATURES]
 
 
 def _clean(snaps: pd.DataFrame) -> pd.DataFrame:
@@ -197,6 +207,9 @@ def build_training_table(cfg: dict[str, Any]) -> int:
         min_positives=int(d.get("min_positives", 50)),
         calendar=cfg.get("calendar"),
     )
+    note = coverage_warning(pd.to_datetime(frame["event_ts"]).dt.normalize(), cfg.get("calendar"))
+    if note:
+        print(f"Warning: {note}", file=sys.stderr)
     print(
         f"Positive rate {frame['label'].mean():.3f}. Persistence baseline AUC on newest 20%: "
         f"{persistence_auc(frame):.3f} (the model must beat this to add value)."

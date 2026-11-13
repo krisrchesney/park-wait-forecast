@@ -14,6 +14,7 @@ from parkwaits.collect import run_collector
 from parkwaits.config import load_config
 from parkwaits.demo_data import make_demo_data
 from parkwaits.drift import drift_report, live_auc
+from parkwaits.features import monitored_features
 from parkwaits.lake import build_table
 from parkwaits.registry import load_current, load_reference
 from parkwaits.storage import connect, read_table, write_frame
@@ -109,7 +110,7 @@ def cmd_drift(cfg: dict, args: argparse.Namespace) -> int:
     report = drift_report(
         reference,
         current,
-        card["features"],
+        monitored_features(card["features"]),
         cfg["drift"],
         live_auc=auc,
         baseline_auc=card["metrics"]["champion_auc"],
@@ -133,7 +134,7 @@ def cmd_monitor_report(cfg: dict, args: argparse.Namespace) -> int:
     out = evidently_html(
         load_reference(registry),
         _current_window(cfg, args.window, card["data"]["train_end"]),
-        card["features"],
+        monitored_features(card["features"]),
         args.out,
     )
     print(f"Evidently report written to {out}")
