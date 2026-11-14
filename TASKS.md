@@ -37,19 +37,20 @@ Done when:
 
 ## Review
 
+## Done
+
 ### T-3: Calendar features (holidays, long weekends, school breaks)
-Status: Review (ticket/T-3-calendar-features)
+Status: Done (merged 2026-11-13, fcfc85b; effect on accuracy not measurable until Thanksgiving week)
 Owns: src/parkwaits/calendar_features.py (new); src/parkwaits/features.py (feature list, compute_features calendar argument, monitored_features); src/parkwaits/cli.py (drift and monitor use monitored_features); config/config.yaml (calendar block, model.features); scripts/build_site.py (pass the calendar); tests/test_calendar_features.py (new); README (Decisions, Limitations)
 Blocked by: none
 Why: Account for longer or shorter waits on holidays and school breaks, from the date alone so nothing leaks.
 Done when:
-- [ ] Features depend only on the local date; a test proves it
-- [ ] Holiday dates match an independent source (OCPS's published holidays)
-- [ ] Dates outside the typed-in calendar are NaN, not 0
-- [ ] Before/after comparison on the same data is recorded and disclosed (no measurable change yet)
-- [ ] check passes, and the page build still works with the new model
+- [x] Features depend only on the local date; a test proves it
+- [x] Holiday dates match an independent source (OCPS's published holidays)
+- [x] Dates outside the typed-in calendar are NaN, not 0
+- [x] Before/after comparison on the same data is recorded and disclosed (no measurable change yet)
+- [x] check passes, and the page build still works with the new model
 
-## Done
 
 ### T-1: First real results (after Nov 3)
 Status: Done (merged 2026-11-08, 15885d7)
