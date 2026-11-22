@@ -62,17 +62,22 @@ def main() -> int:
     seed = int(cfg["model"]["random_state"])
     est = build_candidates(seed, ["lightgbm"])["lightgbm"]
     base, withw = list(FEATURES), [*FEATURES, *WEATHER_FEATURES]
+    versions = {  # rain-only drops temperature and cloud, which change hourly and can act as time markers
+        "without weather": base,
+        "with weather": withw,
+        "with rain only": [*FEATURES, "rain_now_mm", "rain_3h_mm"],
+    }
 
     metric = "avg_precision"
     folds = {
         name: rolling_fold_scores(train_df, feats, "label", {"m": est}, metric, 4)["m"]
-        for name, feats in (("without weather", base), ("with weather", withw))
+        for name, feats in versions.items()
     }
-    models = {name: clone(est).fit(train_df[feats], train_df["label"].to_numpy()) for name, feats in (("without weather", base), ("with weather", withw))}
+    models = {n: clone(est).fit(train_df[f], train_df["label"].to_numpy()) for n, f in versions.items()}
     y = test_df["label"].to_numpy()
-    probs = {name: m.predict_proba(test_df[feats])[:, 1] for (name, m), feats in zip(models.items(), (base, withw), strict=True)}
+    probs = {n: m.predict_proba(test_df[versions[n]])[:, 1] for n, m in models.items()}
     days = pd.to_datetime(test_df["event_ts"]).dt.strftime("%Y-%m-%d").to_numpy()
-    iv = day_bootstrap_gap(y, probs["with weather"], probs["without weather"], days)
+    ivs = {n: day_bootstrap_gap(y, probs[n], probs["without weather"], days) for n in ("with weather", "with rain only")}
     wet = (test_df["rain_3h_mm"] >= WET_MM).to_numpy()
     imp = pd.Series(models["with weather"].named_steps["clf"].feature_importances_, index=withw)
 
@@ -84,8 +89,8 @@ def main() -> int:
         f"{(train_df['rain_3h_mm'] >= WET_MM).mean():.1%} of train rows.",
         "",
         "## Rolling folds inside the training window (average precision per fold)",
-        "| Version | " + " | ".join(f"fold {i + 1}" for i in range(len(folds["with weather"]))) + " | mean |",
-        "|---|" + "---|" * (len(folds["with weather"]) + 1),
+        "| Version | " + " | ".join(f"fold {i + 1}" for i in range(len(folds["without weather"]))) + " | mean |",
+        "|---|" + "---|" * (len(folds["without weather"]) + 1),
     ]
     for name, v in folds.items():
         lines.append(f"| {name} | " + " | ".join(f"{x:.4f}" for x in v) + f" | {np.mean(v):.4f} |")
@@ -94,12 +99,18 @@ def main() -> int:
         a, ap_ = _metrics(y, p)
         wa, wap = _metrics(y[wet], p[wet]) if wet.sum() else (float("nan"), float("nan"))
         lines.append(f"| {name} | {a:.4f} | {ap_:.4f} | {wa:.4f} | {wap:.4f} |")
-    if iv:
-        lines += [
-            "",
-            f"AUC with weather minus without: {iv['gap']:+.4f}, {iv['level']:.0%} day-block interval "
-            f"{iv['low']:+.4f} to {iv['high']:+.4f} over {iv['days']} days; with weather ahead in {iv['share_ahead']:.0%} of re-draws.",
-        ]
+    for n, iv in ivs.items():
+        if iv:
+            lines += [
+                "",
+                f"AUC {n} minus without: {iv['gap']:+.4f}, {iv['level']:.0%} day-block interval "
+                f"{iv['low']:+.4f} to {iv['high']:+.4f} over {iv['days']} days; ahead in {iv['share_ahead']:.0%} of re-draws.",
+            ]
+    lines += [
+        "",
+        "Temperature and cloud cover change every hour, so a model can use them as a clock or calendar marker "
+        "instead of as weather; the rain-only version removes that route.",
+    ]
     lines += ["", f"Wet rows in the test split: {int(wet.sum()):,} ({int(y[wet].sum()):,} long waits).", "", "## What the model used (LightGBM split counts)"]
     lines += [f"- {k}: {int(v)}" for k, v in imp.sort_values(ascending=False).items() if k in WEATHER_FEATURES]
     out = Path(args.out)

@@ -15,23 +15,6 @@ Template:
 
 ## Ready
 
-### T-4: Weather features
-Status: Ready
-Owns: new weather module and tests; config
-Blocked by: user go-ahead to build (scoping finished 2026-11-22, below)
-Why: Rain, heat and cool days change both crowds and waits. Use observed conditions at the snapshot or a forecast issued before it, never later weather.
-Scoping (2026-11-22, read from the sources' own pages):
-- Recommended source: Open-Meteo (free API, no key). Hourly temperature_2m, apparent_temperature, precipitation, weather_code, cloud_cover. Historical endpoint is reanalysis (ERA5 0.25 degree plus IFS 9 km in best_match), so it is modelled "observed" weather, not station readings. Newest data lags about 5 days for ERA5 but best_match fills the gap; the Forecast API's past_days covers yesterday.
-- Terms: free for non-commercial use (under 10,000 calls a day, 600 a minute), data under CC BY 4.0, so the page needs a credit link to open-meteo.com. A free site with no ads or subscriptions fits their examples. Caveat: they list "promotional activities" as commercial, and this repo is a portfolio, so decide whether that applies before publishing. Licence page not read; confirm the exact credit wording.
-- Rejected: NWS api.weather.gov. Open data with a required User-Agent, but it keeps only 7 days of station observations and serves no past forecasts, so it cannot backfill Oct 20 onward and past forecasts cannot be recovered.
-- Leakage design: use weather at or before the snapshot hour only (the reanalysis value for that hour and earlier hours, such as rain in the last 3 hours). Never use the next hour's weather as if it were a forecast. A true "forecast issued before" would need a stored forecast, and we have none. Training on reanalysis but serving live from a forecast model is a small train/serve mismatch: disclose it.
-- Cost to build: one fetch script (one call per park location per day, far under the limits), a cached weather table on the data branch, 4 to 6 features, a leakage test, and a rolling-fold before/after run. About 25 to 35 turns.
-- Expected value is modest: 33 days include only a few rainy days, so a gain may not be measurable. Judge it on rain days specifically and report if it is within noise.
-Done when:
-- [x] Source terms and attribution checked and recorded (see Scoping)
-- [ ] Leakage test: a feature never uses weather observed after the snapshot
-- [ ] Before/after comparison on rolling folds, disclosed
-
 ### T-5: Park event nights and park hours
 Status: Ready
 Owns: to be decided
@@ -45,6 +28,29 @@ Done when:
 ## Review
 
 ## Done
+
+### T-4: Weather features
+Status: Done (built and verified 2026-11-22; weather kept OUT of the model, no measurable gain)
+Owns: new weather module and tests; config
+Why: Rain, heat and cool days change both crowds and waits. Use observed conditions at the snapshot or a forecast issued before it, never later weather.
+Scoping (2026-11-22, read from the sources' own pages):
+- Recommended source: Open-Meteo (free API, no key). Hourly temperature_2m, apparent_temperature, precipitation, weather_code, cloud_cover. Historical endpoint is reanalysis (ERA5 0.25 degree plus IFS 9 km in best_match), so it is modelled "observed" weather, not station readings. Newest data lags about 5 days for ERA5 but best_match fills the gap; the Forecast API's past_days covers yesterday.
+- Terms: free for non-commercial use (under 10,000 calls a day, 600 a minute), data under CC BY 4.0, so the page needs a credit link to open-meteo.com. A free site with no ads or subscriptions fits their examples. Caveat: they list "promotional activities" as commercial, and this repo is a portfolio, so decide whether that applies before publishing. Licence page not read; confirm the exact credit wording.
+- Rejected: NWS api.weather.gov. Open data with a required User-Agent, but it keeps only 7 days of station observations and serves no past forecasts, so it cannot backfill Oct 20 onward and past forecasts cannot be recovered.
+- Leakage design: use weather at or before the snapshot hour only (the reanalysis value for that hour and earlier hours, such as rain in the last 3 hours). Never use the next hour's weather as if it were a forecast. A true "forecast issued before" would need a stored forecast, and we have none. Training on reanalysis but serving live from a forecast model is a small train/serve mismatch: disclose it.
+- Cost to build: one fetch script (one call per park location per day, far under the limits), a cached weather table on the data branch, 4 to 6 features, a leakage test, and a rolling-fold before/after run. About 25 to 35 turns.
+- Expected value is modest: 33 days include only a few rainy days, so a gain may not be measurable. Judge it on rain days specifically and report if it is within noise.
+Done when:
+- [x] Source terms and attribution checked and recorded (see Scoping)
+- [x] Leakage test: a feature never uses weather observed after the snapshot
+- [x] Before/after comparison on rolling folds, disclosed
+
+Result (2026-11-22, scripts/weather_experiment.py on the same rows and split, 10 test days, 241,064 train and 60,267 test rows):
+- With all five weather columns: test AUC 0.9739 vs 0.9744 without; difference -0.0004, 95% day-block interval -0.0012 to +0.0003. Rolling-fold mean average precision 0.8112 vs 0.8156 (lower in all 4 folds).
+- Rain only (no temperature or cloud, which can act as time markers): AUC 0.9743, difference -0.0001, interval -0.0004 to +0.0004; fold mean 0.8126.
+- Wet rows (0.5 mm or more in the 3 hours before) were 14.2% of training rows but 43.0% of test rows, so the model saw little rain to learn from. The verdict is "no measurable help in this window", not "weather never helps".
+- Decision: the five columns exist (weather.py, collector `weather`, config block) but model.features does not list them, so the live model and page are unchanged. No page credit to Open-Meteo is needed until a model uses it. The collector is not in the scheduled workflow.
+- Revisit: after a few more wet weeks, or with a longer history; rerun scripts/weather_experiment.py.
 
 ### T-6: Plain-language page with technical drop-downs
 Status: Done (merged 2026-11-22, 1499a83)
