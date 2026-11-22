@@ -206,3 +206,19 @@ def test_headline_follows_which_forecast_wins():
     assert "better than assuming nothing changes" in build_site.headline_text(better, 45)
     worse = {**base, "model": better["persistence"], "persistence": better["model"]}
     assert "worse than assuming nothing changes" in build_site.headline_text(worse, 45)
+
+
+def test_page_reports_how_much_of_the_lead_could_be_luck(parts):
+    page, ev = _page(parts)
+    assert ev["interval"] is not None and ev["interval"]["days"] >= 3
+    assert "random re-draws" in page  # the plain-language face
+    assert "Day-block bootstrap" in page.split('<details class="tech">')[-1] or "Day-block bootstrap" in page
+
+
+def test_interval_wording_flips_when_the_lead_could_be_luck():
+    lucky = {"gap": 0.003, "low": -0.004, "high": 0.01, "level": 0.95, "days": 8, "draws": 300}
+    lucky["share_ahead"] = 0.7
+    assert "could be a lucky run of days" in build_site._interval_plain(lucky)
+    solid = {**lucky, "low": 0.01, "share_ahead": 1.0}
+    assert "unlikely to be a lucky run" in build_site._interval_plain(solid)
+    assert "fewer than 3 days" in build_site._interval_technical(None)

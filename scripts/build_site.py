@@ -34,6 +34,7 @@ from parkwaits.lake import load_lake
 from parkwaits.registry import load_current
 from parkwaits.storage import connect, read_table
 from parkwaits.train import time_split
+from parkwaits.uncertainty import day_bootstrap_gap
 
 REPO = "https://github.com/krisrchesney/park-wait-forecast"
 QT = "https://queue-times.com"
@@ -133,6 +134,9 @@ def holdout_curves(
         out[name] = np.interp(grid, fpr, tpr)
         out[f"auc_{name}"] = float(roc_auc_score(y, s))
     out["persistence_levels"] = int(np.unique(scores["persistence"]).size)
+    out["interval"] = day_bootstrap_gap(
+        y, scores["model"], scores["persistence"], pd.to_datetime(test[ts_col]).dt.strftime("%Y-%m-%d").to_numpy()
+    )
     ts = pd.to_datetime(test[ts_col])
     out["start"], out["end"] = ts.min(), ts.max()
     out["days"] = (out["end"] - out["start"]).total_seconds() / 86400
@@ -150,6 +154,39 @@ def _chance(p: float) -> str:
 def _caught(v: float) -> str:
     """Whole percents, but never show 99.5% to 99.99% as a flat 100%."""
     return ">99%" if 0.995 <= v < 1 else f"{v * 100:.0f}%"
+
+
+def _interval_plain(iv: dict | None) -> str:
+    if not iv:
+        return (
+            '<p class="muted">Treat the gap as a good sign, not proof: it comes from one short stretch of days, and '
+            "consecutive readings of one ride are very similar to each other.</p>"
+        )
+    if iv["low"] > 0:
+        verdict = (
+            f"In {iv['share_ahead']:.0%} of {iv['draws']} random re-draws of the {iv['days']} days, the model still came out "
+            "ahead, so its lead is unlikely to be a lucky run of days."
+        )
+    else:
+        verdict = (
+            f"But in {1 - iv['share_ahead']:.0%} of {iv['draws']} random re-draws of the {iv['days']} days the model did not "
+            "come out ahead, so the lead could be a lucky run of days."
+        )
+    return (
+        f'<p class="muted">{verdict} This only tests for luck in which days were measured: it cannot show the lead '
+        "will last through holidays, school breaks or a different season.</p>"
+    )
+
+
+def _interval_technical(iv: dict | None) -> str:
+    if not iv:
+        return "<p>No confidence interval could be computed (fewer than 3 days in the window).</p>"
+    return (
+        f"<p>Day-block bootstrap ({iv['draws']} draws, whole days resampled with replacement, because readings of one ride "
+        f"minutes apart are nearly identical): the ROC AUC lead is <b>{iv['gap']:+.3f}</b>, with a "
+        f"{iv['level']:.0%} interval from <b>{iv['low']:+.3f}</b> to <b>{iv['high']:+.3f}</b>. The interval reflects "
+        "day-to-day variation only, not changes in conditions the window has not seen.</p>"
+    )
 
 
 def evidence_html(ev: dict, card: dict) -> str:
@@ -198,8 +235,7 @@ def evidence_html(ev: dict, card: dict) -> str:
         f"flagged <b>{at('persistence', 0.10):.0f}</b> at the same false-alarm rate. "
         "Move along the chart to read other false-alarm rates; the dashed line is a random guess.</p>"
         + chart
-        + '<p class="muted">Treat the gap as a good sign, not proof: it comes from one short stretch of days, and '
-        "consecutive readings of one ride are very similar to each other.</p>"
+        + _interval_plain(ev.get("interval"))
         + '<details class="tech"><summary>Technical details</summary>'
         f"<p>Test window: the newest 20% of labelled rows, {start:%b %d} to {end:%b %d, %Y} UTC "
         f"({ev['days']:.1f} days, {ev['n']:,} rows, <b>{ev['positives']:,}</b> of them 45+ minutes an hour later). "
@@ -208,8 +244,8 @@ def evidence_html(ev: dict, card: dict) -> str:
         f'<p>“Same as now” takes only {ev["persistence_levels"]} distinct scores, so its curve is straight lines '
         "between its real operating points and its numbers at a given false-alarm rate are interpolated. "
         "Persistence is scored by ranking on the current wait; it is the bar a forecast has to clear.</p>"
-        "<p>There is no confidence interval on this margin, and consecutive snapshots of a ride are highly correlated.</p>"
-        f"<p>Disclosure: nothing here is tuned on this window. The champion ({html.escape(card['champion'])}) "
+        + _interval_technical(ev.get("interval"))
+        + f"<p>Disclosure: nothing here is tuned on this window. The champion ({html.escape(card['champion'])}) "
         "was chosen on rolling folds inside the training rows, before the test split is cut; the page's "
         "model is retrained by the same code every time new data lands, so these figures move as history grows.</p>"
         "</details>"
