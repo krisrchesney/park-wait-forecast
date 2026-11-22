@@ -160,7 +160,7 @@ def main() -> None:
     ]:
         out += [f"## By {title.lower()}", _table(new, by), ""]
     out += [
-        "## Rides with the weakest ranking (at least 300 rows and 20 long waits)",
+        "## Rides with the weakest ranking (at least 300 rows and 20 long waits; the worst of many, so some of the weakness is chance)",
         _table(new, "ride", order="auc_model", top=12),
         "",
     ]

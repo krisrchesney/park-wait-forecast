@@ -156,26 +156,40 @@ def _caught(v: float) -> str:
     return ">99%" if 0.995 <= v < 1 else f"{v * 100:.0f}%"
 
 
+def _days(n: float) -> str:
+    n = max(1, round(n))
+    return f"{n} day" if n == 1 else f"{n} days"
+
+
+def _verdict(ev: dict) -> str:
+    """'better', 'worse' or 'same': one test (ROC AUC gap of at least 0.01) for every sentence on the page."""
+    gap = ev["auc_model"] - ev["auc_persistence"]
+    return "better" if gap >= 0.01 else ("worse" if gap <= -0.01 else "same")
+
+
 def _interval_plain(iv: dict | None) -> str:
+    luck = (
+        "This only tests for luck in which days were measured: it cannot show the result will last through "
+        "holidays, school breaks or a different season."
+    )
     if not iv:
-        return (
-            '<p class="muted">Treat the gap as a good sign, not proof: it comes from one short stretch of days, and '
-            "consecutive readings of one ride are very similar to each other.</p>"
-        )
+        return f'<p class="muted">Treat this as a hint, not proof: it comes from one short stretch of days. {luck}</p>'
     if iv["low"] > 0:
         verdict = (
             f"In {iv['share_ahead']:.0%} of {iv['draws']} random re-draws of the {iv['days']} days, the model still came out "
-            "ahead, so its lead is unlikely to be a lucky run of days."
+            "ahead, so its lead is unlikely to be just a lucky run of days."
+        )
+    elif iv["high"] < 0:
+        verdict = (
+            f"In {1 - iv['share_ahead']:.0%} of {iv['draws']} random re-draws of the {iv['days']} days, “same as now” "
+            "came out ahead, so the model's shortfall is unlikely to be just a lucky run of days."
         )
     else:
         verdict = (
-            f"But in {1 - iv['share_ahead']:.0%} of {iv['draws']} random re-draws of the {iv['days']} days the model did not "
-            "come out ahead, so the lead could be a lucky run of days."
+            f"In {iv['draws']} random re-draws of the {iv['days']} days the model came out ahead {iv['share_ahead']:.0%} "
+            "of the time, so the difference could be a lucky run of days."
         )
-    return (
-        f'<p class="muted">{verdict} This only tests for luck in which days were measured: it cannot show the lead '
-        "will last through holidays, school breaks or a different season.</p>"
-    )
+    return f'<p class="muted">{verdict} {luck}</p>'
 
 
 def _interval_technical(iv: dict | None) -> str:
@@ -194,9 +208,10 @@ def evidence_html(ev: dict, card: dict) -> str:
     at = lambda key, p: float(np.interp(p, grid, ev[key])) * 100  # noqa: E731
     gap = ev["auc_model"] - ev["auc_persistence"]
     gap_text = f"a difference of {gap:+.3f} for the model"
-    if gap >= 0.01:
+    v = _verdict(ev)
+    if v == "better":
         lead = "On recent held-out data the model ranks long waits better than “same as now”"
-    elif gap <= -0.01:
+    elif v == "worse":
         lead = "On recent held-out data “same as now” ranks long waits better than the model"
     else:
         lead = "On recent held-out data the model and “same as now” rank long waits about equally well"
@@ -209,8 +224,8 @@ def evidence_html(ev: dict, card: dict) -> str:
         "Held-out test window: long waits caught vs false alarms",
         grid,
         series,
-        xlabel="false-alarm rate (rides that stayed under 45 min but were flagged)",
-        ylabel="45+ min cases caught",
+        xlabel=f"false-alarm rate (rides that stayed under {ev['threshold']:.0f} min but were flagged)",
+        ylabel=f"{ev['threshold']:.0f}+ min cases caught",
         xmin=0,
         xmax=1,
         ymax=1,
@@ -229,16 +244,17 @@ def evidence_html(ev: dict, card: dict) -> str:
     start, end = ev["start"], ev["end"]
     return (
         f"<h3>{lead}</h3>"
-        f"<p>Look back at the {ev['days']:.0f} most recent days. Of every 100 rides that really did reach "
-        f"{ev['threshold']:.0f}+ minutes an hour later, the model flagged <b>{at('model', 0.10):.0f}</b> while "
-        f"falsely flagging 10 of every 100 rides that stayed under {ev['threshold']:.0f}. Assuming nothing changes "
-        f"flagged <b>{at('persistence', 0.10):.0f}</b> at the same false-alarm rate. "
-        "Move along the chart to read other false-alarm rates; the dashed line is a random guess.</p>"
+        f"<p>Look back at the most recent {_days(ev['days'])} of held-back data. Of every 100 cases where a ride went on "
+        f"to reach {ev['threshold']:.0f}+ minutes an hour later, the model flagged <b>{at('model', 0.10):.0f}</b> while "
+        f"wrongly flagging 10 of every 100 cases that stayed under {ev['threshold']:.0f}. Assuming nothing changes "
+        f"flagged <b>{at('persistence', 0.10):.0f}</b> at the same false-alarm rate (a reading off the chart, not "
+        "how the forecast table above is flagged; move along the chart to read other false-alarm rates, and the dashed "
+        "line is a random guess).</p>"
         + chart
         + _interval_plain(ev.get("interval"))
         + '<details class="tech"><summary>Technical details</summary>'
         f"<p>Test window: the newest 20% of labelled rows, {start:%b %d} to {end:%b %d, %Y} UTC "
-        f"({ev['days']:.1f} days, {ev['n']:,} rows, <b>{ev['positives']:,}</b> of them 45+ minutes an hour later). "
+        f"({ev['days']:.1f} days, {ev['n']:,} rows, <b>{ev['positives']:,}</b> of them {ev['threshold']:.0f}+ minutes an hour later). "
         f"ROC AUC (0.5 is a coin flip, 1.0 ranks every case perfectly): model <b>{ev['auc_model']:.3f}</b>, "
         f"“same as now” <b>{ev['auc_persistence']:.3f}</b> ({gap_text}).</p>"
         f'<p>“Same as now” takes only {ev["persistence_levels"]} distinct scores, so its curve is straight lines '
@@ -257,11 +273,11 @@ def headline_text(ev: dict, threshold: float) -> str:
     grid = ev["grid"]
     m = float(np.interp(0.10, grid, ev["model"])) * 100
     p = float(np.interp(0.10, grid, ev["persistence"])) * 100
-    verdict = "better than" if m - p >= 1 else ("worse than" if p - m >= 1 else "about the same as")
+    verdict = {"better": "better than", "worse": "worse than", "same": "about the same as"}[_verdict(ev)]
     return (
-        f"Over the last {ev['days']:.0f} days of held-back data, when it was set to wrongly flag 10 of every 100 rides "
-        f"that stayed under {threshold:.0f} minutes, the model caught <b>{m:.0f}</b> of every 100 rides that did reach "
-        f"{threshold:.0f}+ minutes. That is {verdict} assuming nothing changes, which catches {p:.0f}."
+        f"In the most recent {_days(ev['days'])} of held-back data, of every 100 cases where a ride went on to reach "
+        f"{threshold:.0f}+ minutes, the model flagged <b>{m:.0f}</b> while wrongly flagging 10 of every 100 cases that stayed "
+        f"under {threshold:.0f}. That ranks {verdict} assuming nothing changes, which flagged {p:.0f}."
     )
 
 

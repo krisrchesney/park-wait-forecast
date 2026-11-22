@@ -191,7 +191,7 @@ def test_headline_is_a_plain_sentence_and_technical_terms_sit_in_a_dropdown(part
     _, ev = _page(parts)
     sentence = build_site.headline_text(ev, 45)
     assert "ROC" not in sentence and "AUC" not in sentence  # the face of the page uses plain words
-    assert "of every 100 rides" in sentence
+    assert "of every 100 cases" in sentence
     page, _ = _page(parts)
     for term in ("ROC AUC", "average precision"):
         before_first_dropdown = page.split('<details class="tech">')[0]
@@ -203,9 +203,11 @@ def test_headline_follows_which_forecast_wins():
     grid = np.round(np.arange(0, 1.0001, 0.01), 4)
     base = {"grid": grid, "days": 8.0}
     better = {**base, "model": np.clip(grid * 0 + 0.9, 0, 1), "persistence": np.clip(grid * 0 + 0.8, 0, 1)}
-    assert "better than assuming nothing changes" in build_site.headline_text(better, 45)
+    better.update(auc_model=0.97, auc_persistence=0.95)
+    assert "ranks better than assuming nothing changes" in build_site.headline_text(better, 45)
     worse = {**base, "model": better["persistence"], "persistence": better["model"]}
-    assert "worse than assuming nothing changes" in build_site.headline_text(worse, 45)
+    worse.update(auc_model=0.95, auc_persistence=0.97)
+    assert "ranks worse than assuming nothing changes" in build_site.headline_text(worse, 45)
 
 
 def test_page_reports_how_much_of_the_lead_could_be_luck(parts):
@@ -220,5 +222,17 @@ def test_interval_wording_flips_when_the_lead_could_be_luck():
     lucky["share_ahead"] = 0.7
     assert "could be a lucky run of days" in build_site._interval_plain(lucky)
     solid = {**lucky, "low": 0.01, "share_ahead": 1.0}
-    assert "unlikely to be a lucky run" in build_site._interval_plain(solid)
+    assert "unlikely to be just a lucky run" in build_site._interval_plain(solid)
     assert "fewer than 3 days" in build_site._interval_technical(None)
+
+
+def test_headline_and_heading_use_the_same_test_and_the_interval_text_covers_a_shortfall():
+    grid = np.round(np.arange(0, 1.0001, 0.01), 4)
+    # a 1.5-point lead on the chart but an AUC gap of only 0.008: both sentences must say "about the same"
+    ev = {"grid": grid, "days": 1.2, "model": grid * 0 + 0.915, "persistence": grid * 0 + 0.9,
+          "auc_model": 0.958, "auc_persistence": 0.95}
+    assert "about the same as" in build_site.headline_text(ev, 45)
+    assert "1 day " in build_site.headline_text(ev, 45)  # singular, never "1 days" or "0 days"
+    behind = {"gap": -0.02, "low": -0.03, "high": -0.01, "level": 0.95, "days": 8, "draws": 300}
+    behind["share_ahead"] = 0.0
+    assert "model's shortfall is unlikely" in build_site._interval_plain(behind)
