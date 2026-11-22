@@ -185,3 +185,24 @@ def test_near_certain_catch_rates_are_not_shown_as_a_flat_100():
     assert build_site._caught(0.9995) == ">99%"
     assert build_site._caught(0.9954) == ">99%"
     assert build_site._caught(0.91) == "91%"
+
+
+def test_headline_is_a_plain_sentence_and_technical_terms_sit_in_a_dropdown(parts):
+    _, ev = _page(parts)
+    sentence = build_site.headline_text(ev, 45)
+    assert "ROC" not in sentence and "AUC" not in sentence  # the face of the page uses plain words
+    assert "of every 100 rides" in sentence
+    page, _ = _page(parts)
+    for term in ("ROC AUC", "average precision"):
+        before_first_dropdown = page.split('<details class="tech">')[0]
+        assert term not in before_first_dropdown, term  # jargon only appears inside a drop-down
+    assert page.count('<details class="tech">') >= 2
+
+
+def test_headline_follows_which_forecast_wins():
+    grid = np.round(np.arange(0, 1.0001, 0.01), 4)
+    base = {"grid": grid, "days": 8.0}
+    better = {**base, "model": np.clip(grid * 0 + 0.9, 0, 1), "persistence": np.clip(grid * 0 + 0.8, 0, 1)}
+    assert "better than assuming nothing changes" in build_site.headline_text(better, 45)
+    worse = {**base, "model": better["persistence"], "persistence": better["model"]}
+    assert "worse than assuming nothing changes" in build_site.headline_text(worse, 45)

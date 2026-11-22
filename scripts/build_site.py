@@ -111,7 +111,8 @@ def hourly_profile(feats: pd.DataFrame, threshold: float, min_rows: int = MIN_CE
 
 
 def holdout_curves(
-    df: pd.DataFrame, model: object, feature_names: list[str], target: str, ts_col: str, test_fraction: float
+    df: pd.DataFrame, model: object, feature_names: list[str], target: str, ts_col: str, test_fraction: float,
+    threshold: float = 45.0,
 ) -> dict:
     """Champion vs persistence ("the wait stays what it is now") on the newest rows of the training table.
 
@@ -135,6 +136,7 @@ def holdout_curves(
     ts = pd.to_datetime(test[ts_col])
     out["start"], out["end"] = ts.min(), ts.max()
     out["days"] = (out["end"] - out["start"]).total_seconds() / 86400
+    out["threshold"] = float(threshold)
     return out
 
 
@@ -190,21 +192,40 @@ def evidence_html(ev: dict, card: dict) -> str:
     start, end = ev["start"], ev["end"]
     return (
         f"<h3>{lead}</h3>"
-        f"<p>Test window: the newest 20% of labelled rows, {start:%b %d} to {end:%b %d, %Y} UTC "
-        f"({ev['days']:.1f} days, {ev['n']:,} rows, <b>{ev['positives']:,}</b> of them 45+ minutes an hour later). "
-        f"ROC AUC: model <b>{ev['auc_model']:.3f}</b>, “same as now” <b>{ev['auc_persistence']:.3f}</b> "
-        f"({gap_text}). "
-        f"At a 10% false-alarm rate the model catches <b>{at('model', 0.10):.0f}%</b> of the 45+ minute cases "
-        f"vs <b>{at('persistence', 0.10):.0f}%</b> for “same as now”. "
+        f"<p>Look back at the {ev['days']:.0f} most recent days. Of every 100 rides that really did reach "
+        f"{ev['threshold']:.0f}+ minutes an hour later, the model flagged <b>{at('model', 0.10):.0f}</b> while "
+        f"falsely flagging 10 of every 100 rides that stayed under {ev['threshold']:.0f}. Assuming nothing changes "
+        f"flagged <b>{at('persistence', 0.10):.0f}</b> at the same false-alarm rate. "
         "Move along the chart to read other false-alarm rates; the dashed line is a random guess.</p>"
         + chart
-        + f'<p class="muted">“Same as now” takes only {ev["persistence_levels"]} distinct scores, so its curve is straight lines between its real operating points and its numbers at a given false-alarm rate are interpolated.</p>'
-        + '<p class="muted">Read the margin as suggestive: it comes from one short window with no confidence '
-        "interval, and consecutive snapshots of a ride are highly correlated. Persistence is scored by "
-        "ranking on the current wait; it is the bar a forecast has to clear.</p>"
-        f'<p class="muted">Disclosure: nothing here is tuned on this window. The champion ({html.escape(card["champion"])}) '
+        + '<p class="muted">Treat the gap as a good sign, not proof: it comes from one short stretch of days, and '
+        "consecutive readings of one ride are very similar to each other.</p>"
+        + '<details class="tech"><summary>Technical details</summary>'
+        f"<p>Test window: the newest 20% of labelled rows, {start:%b %d} to {end:%b %d, %Y} UTC "
+        f"({ev['days']:.1f} days, {ev['n']:,} rows, <b>{ev['positives']:,}</b> of them 45+ minutes an hour later). "
+        f"ROC AUC (0.5 is a coin flip, 1.0 ranks every case perfectly): model <b>{ev['auc_model']:.3f}</b>, "
+        f"“same as now” <b>{ev['auc_persistence']:.3f}</b> ({gap_text}).</p>"
+        f'<p>“Same as now” takes only {ev["persistence_levels"]} distinct scores, so its curve is straight lines '
+        "between its real operating points and its numbers at a given false-alarm rate are interpolated. "
+        "Persistence is scored by ranking on the current wait; it is the bar a forecast has to clear.</p>"
+        "<p>There is no confidence interval on this margin, and consecutive snapshots of a ride are highly correlated.</p>"
+        f"<p>Disclosure: nothing here is tuned on this window. The champion ({html.escape(card['champion'])}) "
         "was chosen on rolling folds inside the training rows, before the test split is cut; the page's "
         "model is retrained by the same code every time new data lands, so these figures move as history grows.</p>"
+        "</details>"
+    )
+
+
+def headline_text(ev: dict, threshold: float) -> str:
+    """One plain sentence for the page's top: how many long waits the model catches vs 'same as now'."""
+    grid = ev["grid"]
+    m = float(np.interp(0.10, grid, ev["model"])) * 100
+    p = float(np.interp(0.10, grid, ev["persistence"])) * 100
+    verdict = "better than" if m - p >= 1 else ("worse than" if p - m >= 1 else "about the same as")
+    return (
+        f"Over the last {ev['days']:.0f} days of held-back data, when it was set to wrongly flag 10 of every 100 rides "
+        f"that stayed under {threshold:.0f} minutes, the model caught <b>{m:.0f}</b> of every 100 rides that did reach "
+        f"{threshold:.0f}+ minutes. That is {verdict} assuming nothing changes, which catches {p:.0f}."
     )
 
 
@@ -357,7 +378,7 @@ def forecast_html(
 def render(
     *, built: datetime, card: dict, version: str, n_rides: int, n_snaps: int, first: pd.Timestamp, last: pd.Timestamp,
     n_parks: int, forecast: str, banner: str, profile: str, evidence: str, threshold: float, horizon: int,
-    snapshot_minutes: int = 10,
+    snapshot_minutes: int = 10, headline: str = "",
 ) -> str:
     m = card["metrics"]["all_candidates"][card["champion"]]
     days = (last - first).total_seconds() / 86400
@@ -387,6 +408,10 @@ a {{ color:var(--accent); }}
 .guide h3 {{ margin:0 0 6px; }}
 .guide ol, .guide ul {{ margin:0; padding-left:20px; }}
 .guide li {{ margin:4px 0; }}
+.facts {{ margin:6px 0 0; }}
+.fact {{ border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin:0 0 12px; max-width:none; }}
+details.tech {{ margin:10px 0; }}
+details.tech summary {{ cursor:pointer; color:var(--accent); }}
 .stats {{ display:flex; flex-wrap:wrap; gap:12px; margin:20px 0; }}
 .stat {{ border:1px solid var(--line); border-radius:8px; padding:10px 14px; min-width:150px; }}
 .stat b {{ display:block; font-size:1.3rem; }}
@@ -398,9 +423,7 @@ td.num, th.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
 tr:last-child td {{ border-bottom:0; }}
 footer {{ margin-top:40px; font-size:.85rem; }}
 .hero {{ display:grid; grid-template-columns:minmax(0,68ch) minmax(220px,1fr); gap:28px; align-items:start; }}
-.hero .stats {{ flex-direction:column; margin:6px 0 0; }}
-.hero .stat {{ min-width:0; }}
-@media (max-width:820px) {{ .hero {{ grid-template-columns:1fr; gap:0; }} .hero .stats {{ flex-direction:row; }} .hero .stat {{ min-width:140px; flex:1 1 140px; }} }}
+@media (max-width:820px) {{ .hero {{ grid-template-columns:1fr; gap:0; }} }}
 {CHART_CSS}
 </style>
 </head>
@@ -415,11 +438,12 @@ then checks the forecast against the simplest alternative: “the wait stays wha
 <p class="muted">Forecast for {horizon} minutes after the newest snapshot. Built {html.escape(stamp)}. {html.escape(banner)}
 Wait-time data is <a href="{QT}">Powered by Queue-Times.com</a>.</p>
 </div>
-<div class="stats">
-  <div class="stat"><b>{n_rides:,}</b>rides and attractions across {n_parks} parks</div>
-  <div class="stat"><b>{n_snaps:,}</b>snapshots over {days:.0f} days ({first:%b %d} to {last:%b %d, %Y})</div>
-  <div class="stat"><b>{html.escape(card["champion"])}</b>model <code>{html.escape(version)}</code></div>
-  <div class="stat"><b>{m["roc_auc"]:.3f}</b>test ROC AUC (avg precision {m["avg_precision"]:.3f})</div>
+<div class="facts">
+  <p class="fact">Every {snapshot_minutes} minutes the posted wait of <b>{n_rides:,}</b> rides and attractions at {n_parks} Orlando parks is recorded: <b>{n_snaps:,}</b> readings over {days:.0f} days ({first:%b %d} to {last:%b %d, %Y}).</p>
+  <p class="fact">{headline}</p>
+  <details class="tech"><summary>Technical details</summary>
+  <p>Model: <b>{html.escape(card["champion"])}</b> (<code>{html.escape(version)}</code>). On its test window: ROC AUC <b>{m["roc_auc"]:.3f}</b> (0.5 is a coin flip, 1.0 ranks every case perfectly) and average precision <b>{m["avg_precision"]:.3f}</b> (how many of the rides it flags really reach {threshold:.0f}+ minutes, averaged over every cut-off).</p>
+  </details>
 </div>
 </div>
 
@@ -502,7 +526,9 @@ def main() -> None:
         table = read_table(con, d["table"], order_by=d["timestamp_col"])
     finally:
         con.close()
-    ev = holdout_curves(table, model, card["features"], mcfg["target"], d["timestamp_col"], mcfg["test_fraction"])
+    ev = holdout_curves(
+        table, model, card["features"], mcfg["target"], d["timestamp_col"], mcfg["test_fraction"], threshold
+    )
 
     built = datetime.now(UTC)
     forecast, banner = forecast_html(fc, feats, names, tz, built, args.top, threshold, horizon)
@@ -522,6 +548,7 @@ def main() -> None:
         threshold=threshold,
         horizon=horizon,
         snapshot_minutes=int(qt.get("snapshot_minutes", 10)),
+        headline=headline_text(ev, threshold),
     )
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
