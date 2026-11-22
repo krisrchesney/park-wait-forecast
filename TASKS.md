@@ -37,22 +37,23 @@ Done when:
 
 ## Review
 
+## Done
+
 ### T-6: Plain-language page with technical drop-downs
-Status: Review (ticket/T-6-plain-language-page)
+Status: Done (merged 2026-11-22, 1499a83)
 Owns: scripts/build_site.py; tests/test_build_site.py
 Why: Plain sentences are the face of the page; the technical detail stays, in drop-downs.
 
 ### T-7: Error analysis on newer data
-Status: Review (ticket/T-7-error-analysis, stacked on T-6)
+Status: Done (merged 2026-11-22, 1499a83)
 Owns: scripts/error_analysis.py
 Why: Find where the model is weak: by park, time of day, wait band, ride and sudden jumps.
 
 ### T-8: Interval on the AUC lead
-Status: Review (ticket/T-8-auc-interval, stacked on T-7)
+Status: Done (merged 2026-11-22, 1499a83)
 Owns: src/parkwaits/uncertainty.py; tests/test_uncertainty.py; page wording
 Why: Say how much of the model's lead over 'same as now' could be luck of the days measured.
 
-## Done
 
 ### T-3: Calendar features (holidays, long weekends, school breaks)
 Status: Done (merged 2026-11-13, fcfc85b; effect on accuracy not measurable until Thanksgiving week)
