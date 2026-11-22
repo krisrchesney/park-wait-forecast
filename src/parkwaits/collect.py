@@ -15,6 +15,7 @@ import pandas as pd
 
 from parkwaits.lake import upsert_partitioned
 from parkwaits.queue_times import QueueTimesCollector
+from parkwaits.weather import WeatherCollector
 
 
 class Collector(Protocol):
@@ -49,7 +50,11 @@ class DemoCollector:
         return df
 
 
-COLLECTORS: dict[str, type] = {"demo": DemoCollector, "queue_times": QueueTimesCollector}
+COLLECTORS: dict[str, type] = {
+    "demo": DemoCollector,
+    "queue_times": QueueTimesCollector,
+    "weather": WeatherCollector,
+}
 
 
 def run_collector(name: str, cfg: dict[str, Any]) -> tuple[int, int]:

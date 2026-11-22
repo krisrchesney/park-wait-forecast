@@ -25,8 +25,9 @@ import pandas as pd
 from sklearn.metrics import roc_auc_score
 
 from parkwaits.calendar_features import CALENDAR_FEATURES, calendar_features, coverage_warning
-from parkwaits.lake import load_lake
+from parkwaits.lake import has_data, load_lake
 from parkwaits.storage import connect, write_frame
+from parkwaits.weather import WEATHER_FEATURES, weather_features
 
 ROLLING = "3h"
 WAIT_FEATURES = [
@@ -113,13 +114,19 @@ def _history_mean(df: pd.DataFrame, group: list[str], name: str) -> pd.Series:
 
 
 def compute_features(
-    snaps: pd.DataFrame, tz_by_park: dict[int, str], calendar: dict[str, Any] | None = None
+    snaps: pd.DataFrame,
+    tz_by_park: dict[int, str],
+    calendar: dict[str, Any] | None = None,
+    weather: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Add features to every snapshot row. Accepts raw lake rows; returns a copy sorted by ride and time.
 
-    `calendar` is the config's `calendar` block (school breaks); without it is_school_break is NaN."""
+    `calendar` is the config's `calendar` block (school breaks); without it is_school_break is NaN.
+    `weather` is the lake's hourly weather table; without it the weather columns are NaN. They are always
+    present but only used when `model.features` lists them."""
     df = _local_clock(_clean(snaps), tz_by_park)
     df[CALENDAR_FEATURES] = calendar_features(df["local_date"], calendar)
+    df[WEATHER_FEATURES] = weather_features(df, weather)
 
     df["wait_now"] = df["wait_open"]
     df["wait_lag_30"] = _lag(df, 30, "wait_lag_30")
@@ -157,8 +164,9 @@ def build_training_frame(
     min_rows: int = 2000,
     min_positives: int = 50,
     calendar: dict[str, Any] | None = None,
+    weather: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    df = compute_features(snaps, tz_by_park, calendar)
+    df = compute_features(snaps, tz_by_park, calendar, weather)
     target = df[[*KEYS, "observed_at", "is_open", "wait_time"]].copy()
     target["observed_at"] = target["observed_at"] - pd.Timedelta(minutes=horizon_minutes)
     target = target.rename(columns={"is_open": "target_open", "wait_time": "target_wait"})
@@ -168,7 +176,8 @@ def build_training_frame(
     out = df[usable].copy()
     out["label"] = (out["target_wait"] >= wait_threshold_min).astype(int)
     out["event_ts"] = out["observed_at"]
-    out = out[["event_ts", "label", "park_id", "ride_id", *FEATURES]].sort_values("event_ts")
+    columns = ["event_ts", "label", "park_id", "ride_id", *FEATURES, *WEATHER_FEATURES]
+    out = out[columns].sort_values("event_ts")
     out = out.reset_index(drop=True)
 
     positives = int(out["label"].sum())
@@ -194,7 +203,8 @@ def persistence_auc(frame: pd.DataFrame, test_fraction: float = 0.2) -> float:
 
 def build_training_table(cfg: dict[str, Any]) -> int:
     """Entry point for `parkwaits build` (configured as data.builder). Returns the training row count."""
-    snaps = load_lake(cfg["lake"]["root"], "queue_times")
+    root = cfg["lake"]["root"]
+    snaps = load_lake(root, "queue_times")
     if snaps.empty:
         raise ValueError("The lake has no 'queue_times' data. Run `collect queue_times` first.")
     qt, d = cfg["queue_times"], cfg["data"]
@@ -206,6 +216,7 @@ def build_training_table(cfg: dict[str, Any]) -> int:
         min_rows=int(d.get("min_rows", 2000)),
         min_positives=int(d.get("min_positives", 50)),
         calendar=cfg.get("calendar"),
+        weather=load_lake(root, "weather") if has_data(root, "weather") else None,
     )
     note = coverage_warning(pd.to_datetime(frame["event_ts"]).dt.normalize(), cfg.get("calendar"))
     if note:

@@ -8,21 +8,37 @@ queue_times:
   - id: 6
     name: Magic Kingdom
     timezone: America/New_York
+    latitude: 28.4177
+    longitude: -81.5812
   - id: 5
     name: Epcot
     timezone: America/New_York
+    latitude: 28.3747
+    longitude: -81.5494
   - id: 7
     name: Hollywood Studios
     timezone: America/New_York
+    latitude: 28.3575
+    longitude: -81.5583
   - id: 8
     name: Animal Kingdom
     timezone: America/New_York
+    latitude: 28.3553
+    longitude: -81.5901
   - id: 65
     name: Universal Studios Orlando
     timezone: America/New_York
+    latitude: 28.4755
+    longitude: -81.4686
   - id: 64
     name: Islands of Adventure
     timezone: America/New_York
+    latitude: 28.4714
+    longitude: -81.4710
+# Weather from Open-Meteo.com (CC BY 4.0; free for non-commercial use). Park coordinates are approximate: the weather grid is 9 to 25 km.
+weather:
+  start_date: 2026-10-20
+  # lookback_days: 7   # set to fetch only the last N days instead of everything since start_date
 data:
   db_path: data/warehouse.duckdb
   table: training_data
